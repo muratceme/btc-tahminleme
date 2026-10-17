@@ -30,7 +30,7 @@ Python 3.10 veya daha yenisi gerekir. API anahtarı gerekmez; tüm kaynaklar her
 | `python -m btc_tahmin rapor --aralik 10m` | 10 dakikalık mumlarla (5m'den üretilir) |
 | `python -m btc_tahmin rapor --hizli` | Son 24 saatte bulunan kuralları yeniden kullanır (~1 dk) |
 | `python -m btc_tahmin rapor --coin BTC` | Sadece seçilen coin(ler) |
-| `python -m btc_tahmin canli --ac` | **Önerilen.** Her 15m mumda yeniler, panoyu **http://localhost:8000** adresinde yayınlar. Aynı Wi-Fi'daki telefondan terminalde yazan `http://192.168.x.x:8000` adresiyle açılır |
+| `python -m btc_tahmin canli --ac` | **Önerilen.** Her 15m mumda yeniler, 24 saatten yeni kural önbelleği varsa onu kullanır (yeniden açılış 1-2 dk; `--tam` ile kuralları şimdi yeniden aratırsın), panoyu **http://localhost:8000** adresinde yayınlar. Aynı Wi-Fi'daki telefondan terminalde yazan `http://192.168.x.x:8000` adresiyle açılır |
 | `python -m btc_tahmin izle --dakika 15 --ac` | Her 15m mum kapanışında otomatik yeniler, pano dakikada bir tazelenir |
 | `python -m btc_tahmin ozet` | Son raporu terminalde tekrar gösterir |
 | `python -m btc_tahmin canli --tunel` | Evden dışarıdan (mobil veriyle) erişim: Cloudflare tüneliyle `https://….trycloudflare.com` adresi açar, panoyu otomatik şifreler. Bir kez `winget install --id Cloudflare.cloudflared` gerekir |

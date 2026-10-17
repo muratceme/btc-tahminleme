@@ -4,7 +4,6 @@
 import tempfile
 from pathlib import Path
 
-import pandas as pd
 
 from btc_tahmin import config, gunluk
 from tests.sentetik_test import sahte_mumlar

@@ -4,6 +4,7 @@
     python -m btc_tahmin rapor --hizli    # 24 saatten yeni kural önbelleğini kullan (madenciliği atla)
     python -m btc_tahmin izle --dakika 15 # her N dakikada bir raporu yenile
     python -m btc_tahmin canli            # izle + http://localhost:8000 (telefondan da açılır)
+    python -m btc_tahmin canli --tam      # kuralları şimdi yeniden ara (normalde 24 saatlik önbellek kullanılır)
     python -m btc_tahmin ozet             # son raporu (rapor.json) terminalde tekrar göster
     python -m btc_tahmin kontrol          # her metrik geldi mi? (son rapora göre)
     python -m btc_tahmin telegram         # telefona bildirim kurulumu (adım adım)
@@ -48,6 +49,8 @@ def main(argv=None):
         a.add_argument("--ac", action="store_true", help="raporu tarayıcıda aç")
         if ad in ("izle", "canli"):
             a.add_argument("--dakika", type=int, default=15)
+            a.add_argument("--tam", action="store_true",
+                           help="kuralları şimdi yeniden ara (varsayılan: 24 saatten yeni kural önbelleği varsa kullan)")
         if ad == "canli":
             a.add_argument("--port", type=int, default=8000)
             a.add_argument("--sifre", help="panoyu şifrele (kullanıcı adı: kripto)")
@@ -125,7 +128,10 @@ sonra calistir.bat'ı tekrar çalıştır. Bundan sonraki sürümler eski kopyay
         print("=" * 60, flush=True)
         if args.ac:
             webbrowser.open(adres)
-    # izle: ilk tur tam madencilik, sonrakiler önbellekle (günde bir kez yeniden madencilik)
+    # izle/canli: 24 saatten yeni kural önbelleği varsa ilk tur da onu kullanır (yeniden açılış 1-2 dk sürer);
+    # önbellek yoksa ya da eskiyse (ya da --tam verildiyse) ilk tur tam madencilik yapar. Sonra günde bir kez yenilenir.
+    if not args.tam:
+        args.hizli = True
     ilk = True
     while True:
         try:

@@ -27,7 +27,7 @@ display:flex;align-items:center;justify-content:center;min-height:100vh;text-ali
 b{color:#fbbf24}a{color:#f3d778}</style></head><body><div><b>◆ KRİPTO RİSK TERMİNALİ</b><p>Analiz hazırlanıyor...</p>
 <p style="color:#d7dde6;font-size:14px">__DURUM__</p>
 <p style="color:#7c8a9c;font-size:13px">Program yeni açıldı; ilk tur hesap bitene kadar güncel rapor yok.<br>
-İlk açılışta (özellikle kurallar yeniden aranırken) 10-15 dakika sürebilir. Sonraki güncellemeler çok daha hızlıdır.<br>
+Kurallar yeniden aranıyorsa (ilk kurulum ya da 24 saati geçmişse) 10-15 dakika, yoksa 1-2 dakika sürer.<br>
 Bu sayfa 15 saniyede bir kendini yeniler; rapor hazır olunca otomatik açılır.</p>
 __ESKI__</div></body></html>"""
 HAZIR = True          # canlı modda ilk tur bitene kadar False: eski rapor yeniymiş gibi gösterilmez
