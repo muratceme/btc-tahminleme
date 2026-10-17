@@ -49,7 +49,11 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
 
 ## Çıktılar (`cikti/`)
 
-- `rapor.html`: Bloomberg terminali tarzı koyu pano (genel puan, dominanslar, F&G, vadeli, her coin için risk tablosu, aktif kombinasyonlar, haberler)
+- `rapor.html`: Bloomberg terminali tarzı koyu pano. Kayan fiyat/dominans/haber şeridi, CANLI göstergesi, coin sekmeleri,
+  yarım daire risk göstergesi ve karar etiketi, "bu risk neye dayanıyor" açıklaması, risk tablosu (her satırın düz Türkçe anlamıyla),
+  aktif kombinasyon kartları, sinyal haritası (şu an doğru olan tüm koşullar gruplu ve renkli)
+- `nasil-calisir.html`: Her şeyin nasıl hesaplandığını anlatan rehber: veriler, tüm indikatör ve formasyonlar, kombinasyon arama,
+  tutarlılık ölçümü, risk türleri, kırım tablosu, dominans okuma, örnekli okuma rehberi, sözlük. Panodaki `?` işaretleri buraya götürür
 - `rapor.json`: tüm sayılar (başka araçlara bağlamak için)
 - `kurallar_BTCUSDT_15m.csv`: bulunan tüm kombinasyon kuralları ve test istatistikleri
 

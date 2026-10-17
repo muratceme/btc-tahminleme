@@ -58,7 +58,7 @@ def risk_tablosu(yon_satirlari, kurallar_gs, dusus_satirlari, kirim) -> dict:
             continue
         p_yukari = k["tutarlilik"] if k["yon"].startswith("YESIL") else 1 - k["tutarlilik"]
         satirlar.append({
-            "kaynak": "Kombinasyon: " + " + ".join(k["kosullar"]), "tur": "Yön (gün sonu)",
+            "kaynak": "Kombinasyon: " + " + ".join(k["kosullar"]), "tur": "Yön (gün sonu)", "kosullar": k["kosullar"],
             "tutarlilik": k["tutarlilik"], "test_n": k["test_n"], "sinyal_var": True,
             "long_risk": round(100 * (1 - p_yukari), 1), "short_risk": round(100 * p_yukari, 1),
             "detay": f"testte {k['test_bagimsiz_gun']} farklı gün, lift x{k['kaldirac_lift']}",
@@ -89,7 +89,7 @@ def risk_tablosu(yon_satirlari, kurallar_gs, dusus_satirlari, kirim) -> dict:
     dusus = [s for s in satirlar if s["tur"].startswith("Max")]
     if dusus:
         ozet["max_dusus"] = {f"%{int(round(s['tutarlilik'] * 100))}": s["max_dusus"] for s in dusus}
-    temel = ozet["long_risk"] if ozet["long_risk"] is not None else ozet.get("ham_model_long_risk")
+    temel = ozet["long_risk"]   # tutarlı sinyal yoksa kırımlı risk de hesaplanmaz (düşük güvenli sayı sunulmaz)
     if temel is not None:
         # Puan kırımı ayrı gösterilir: risk + kırım * (100 - risk) / 100
         ozet["kirimli_long_risk"] = round(min(99.0, temel + kirim["toplam_kirim"] * (100 - temel) / 100), 1)
@@ -119,6 +119,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "son_mum_zamani": son["time"].isoformat(), "fiyat": float(son["close"]),
         "degisim_24s": _degisim_24s(o),
         "veri_mum_sayisi": int(len(o)),
+        "son_fiyatlar": [round(float(x), 6) for x in o["close"].iloc[-96:]],
         "veri_baslangic": o["time"].iloc[0].isoformat(),
         "teknik_ozet": {
             "RSI": round(float(son["rsi"]), 1), "ADX": round(float(son["adx"]), 1),
