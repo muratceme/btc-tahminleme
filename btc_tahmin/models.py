@@ -131,11 +131,14 @@ def yon_modelleri(o: pd.DataFrame, hedef: pd.DataFrame, hedef_adi: str = "gun_so
         tam.fit(np.nan_to_num(X) if doldur else X, y)
         x_son = X_df.to_numpy()[-1:]
         p_simdi = float(tam.predict_proba(np.nan_to_num(x_son) if doldur else x_son)[0, 1])
+        # Geriye dönük kontrol için son mumlardaki tahminler (en eskiden en yeniye)
+        x_gecmis = X_df.to_numpy()[-config.GERIYE_MAX_MUM - 1:]
+        p_gecmis = tam.predict_proba(np.nan_to_num(x_gecmis) if doldur else x_gecmis)[:, 1].round(4).tolist()
 
         satirlar.append({  # eşiksiz ham tahmin: her zaman üretilir, tutarlılığı düşük olabilir
             "tur": "HAM", "model": f"{ad} ({hedef_adi})", "hedef": hedef_adi,
             "p_yukari_simdi": round(p_simdi, 4), "long_risk_yuzde": round(100 * (1 - p_simdi), 1),
-            "modelin_genel_dogrulugu": round(genel_dogruluk, 4),
+            "modelin_genel_dogrulugu": round(genel_dogruluk, 4), "p_gecmis": p_gecmis,
             "teshis": _teshis(p[sec], y[sec], None if gun is None else gun[sec], min_n),
         })
         for hedef_oran in config.TUTARLILIK_SEVIYELERI:

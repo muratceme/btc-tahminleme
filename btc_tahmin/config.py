@@ -47,6 +47,10 @@ DERIN_HEDEFLER = (
     + [(f"seri_{n}_{r}", n, (1,)) for n in SERI_MUMLAR for r in ("yesil", "kirmizi")]
 )
 
+# Geriye dönük kontrol: bu kadar dakika önce sinyale göre işlem açılsaydı şimdi ne olurdu?
+GERIYE_DAKIKALAR = [15, 30, 45, 60]
+GERIYE_MAX_MUM = 12
+
 # Tutarlılık seviyeleri (Risk-A, Risk-B ...)
 TUTARLILIK_SEVIYELERI = [0.90, 0.85, 0.80, 0.75, 0.70]
 

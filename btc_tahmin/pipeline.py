@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import bildirim, config, gunluk, market, miner, models, performans
+from . import bildirim, config, gunluk, market, miner, models, performans, sinyal
 from .features import gun_sonuna_kalan_saat, ince_kosullar, veri_seti_hazirla
 
 
@@ -250,6 +250,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "kural_kutuphanesi": {k: v[:60] for k, v in kurallar.items()},
         "simulasyon": simulasyon,
         "pozisyon": pozisyon_onerisi(float(o["close"].iloc[-1]), tablo["ozet"], kirim),
+        "yon": sinyal.hesapla(o, KT, kurallar, yon, aralik),
         "aktif_tum": [{k: r[k] for k in ("id", "hedef", "yon", "tutarlilik", "kosullar")}
                       for liste in kurallar.values() for r in liste if r["aktif_su_an"]],
         "kural_sayisi": {k: len(v) for k, v in kurallar.items()},

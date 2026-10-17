@@ -10,6 +10,7 @@ import math
 
 from . import config
 from .market import DOM_COINLER
+from .sinyal import KARARSIZLIK_ESIGI
 from .aciklama import AILELER, FORMASYONLAR, GRUP_SIRASI, hedef_metni, kosul_bilgisi
 
 CSS = """
@@ -111,6 +112,7 @@ tr.pasif td{opacity:.5}.satir-not{color:var(--soluk);font-size:12px;margin-top:4
 .kural-yuzde{font-family:var(--mono);font-size:20px;font-weight:800}
 .grafik-btn{margin-left:auto;font-size:12px;font-weight:700;color:var(--altin2);border:1px solid rgba(212,175,55,.45);border-radius:8px;
 padding:4px 10px;background:rgba(212,175,55,.07);white-space:nowrap}.grafik-btn:hover{background:rgba(212,175,55,.16);text-decoration:none}
+.yon-izgara{display:grid;grid-template-columns:1fr 1.7fr;gap:16px;margin-bottom:16px}@media (max-width:1100px){.yon-izgara{grid-template-columns:1fr}}
 .net-satir{margin-top:6px;font-size:12px;color:var(--soluk);border-top:1px dashed var(--cizgi);padding-top:6px}
 .derin-kart{border-color:rgba(212,175,55,.35);box-shadow:0 0 0 1px rgba(212,175,55,.12) inset,0 10px 30px rgba(0,0,0,.35)}
 .grafik-kutu{height:520px;margin-top:10px}.grafik-kucuk{height:200px;margin-top:10px}@media (max-width:640px){.grafik-kutu{height:380px}}
@@ -475,6 +477,7 @@ def _coin(c: dict, kirim: dict) -> str:
     return f"""
 <section class="coin" id="{_e(c['sembol'])}">
 {hero}
+{_yon_karti(c)}
 <div class="aciklama-kutu">{_dayanak_metni(c)}</div>
 <div class="kart bolum derin-kart">{derin_html}</div>
 <div class="iki-sutun">
@@ -491,6 +494,56 @@ def _coin(c: dict, kirim: dict) -> str:
   <details><summary>Kural kütüphanesi · gün sonu ({c['kural_sayisi']['gun_sonu']} kural, en iyi 20)</summary><div style="margin-top:10px">{kut(c['kural_kutuphanesi']['gun_sonu'])}</div></details>
 </div>
 </section>"""
+
+
+def _yon_rozeti(sinyal: str, buyuk: bool = False) -> str:
+    sinif, metin = {"LONG": ("iyi", "▲ LONG"), "SHORT": ("kotu", "▼ SHORT")}.get(sinyal, ("notr", "● BEKLE"))
+    stil = ' style="font-size:22px;padding:6px 16px"' if buyuk else ""
+    return f'<span class="rozet {sinif}"{stil}>{metin}</span>'
+
+
+def _yuzde(v) -> str:
+    if v is None:
+        return '<span class="notr">—</span>'
+    return f'<span class="{"iyi" if v > 0 else "kotu"}">{v:+.2f}%</span>'
+
+
+def _yon_karti(c: dict) -> str:
+    y = c.get("yon") or {}
+    sm = y.get("simdi") or {}
+    if not sm:
+        return ""
+    toplam = (sm.get("long_oy", 0) + sm.get("short_oy", 0)) or 1
+    dayanak = "".join(f'<li><span>{_e(d)}</span></li>' for d in sm.get("dayanak", []))
+    sol = (f'{_baslik("Yön sinyali · şu an", "yon-sinyali")}'
+           f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">{_yon_rozeti(sm["sinyal"], True)}'
+           f'<div class="kucuk">güç <b class="mono">%{sm.get("guc", 0) * 100:.0f}</b> · '
+           f'<span class="iyi">{sm.get("long_oy", 0)} long</span> / <span class="kotu">{sm.get("short_oy", 0)} short</span> oy'
+           + (f' · en tutarlı kaynak %{sm["en_tutarli"] * 100:.0f}' if sm.get("en_tutarli") else "") + '</div></div>'
+           f'<div class="denge" style="margin-top:12px"><div class="b" style="width:{100 * sm.get("long_oy", 0) / toplam:.0f}%"></div>'
+           f'<div class="a" style="width:{100 * sm.get("short_oy", 0) / toplam:.0f}%"></div></div>'
+           + (f'<p class="kucuk">{_e(sm["neden"])}</p>' if sm.get("neden") else "")
+           + (f'<ul class="liste">{dayanak}</ul>' if dayanak else "")
+           + '<p class="cok-kucuk">Şu an aktif olan tüm tutarlı kural ve modellerin oylaması. Her kaynağın ağırlığı tutarlılığıyla artar. '
+             'Kaynakların vadeleri farklı olabilir (sonraki mum, 3 mum sonra, gün sonu…); dayanak listesinde yazar.</p>')
+    satir = []
+    for r in y.get("geriye", []):
+        zaman = r["zaman"][11:16]
+        dogru = "" if r["sinyal_dogru"] is None else ('<span class="rozet iyi">✓</span>' if r["sinyal_dogru"] else '<span class="rozet kotu">✕</span>')
+        satir.append(
+            f'<tr><td><b>{r["dakika"]} dk önce</b><div class="cok-kucuk">{_e(zaman)} UTC</div></td>'
+            f'<td>{_yon_rozeti(r["sinyal"])}<div class="cok-kucuk">{r["long_oy"]} long / {r["short_oy"]} short oy</div></td>'
+            f'<td class="sayi mono"><b>{_yuzde(r["sinyale_gore_net"]) if r["sinyale_gore_net"] is not None else "işlem yok"}</b> {dogru}</td>'
+            f'<td class="sayi mono">{_yuzde(r["long_net"])}</td><td class="sayi mono">{_yuzde(r["short_net"])}</td>'
+            f'<td class="sayi mono">{_fiyat(r["giris"])}<div class="cok-kucuk">fiyat {_yuzde(r["hareket_yuzde"])}</div></td></tr>')
+    sag = (f'{_baslik("Geriye dönük · o an işlem açılsaydı şimdi ne olurdu?", "yon-sinyali")}'
+           + (f'<div class="tablo-sar"><table><thead><tr><th>Ne zaman</th><th>O anki sinyal</th><th class="sayi">Sinyale uysaydın</th>'
+              f'<th class="sayi">Long açsaydın</th><th class="sayi">Short açsaydın</th>'
+              f'<th class="sayi">Giriş</th></tr></thead><tbody>{"".join(satir)}</tbody></table></div>'
+              if satir else '<p class="kucuk">Bu zaman diliminde 15-60 dakikalık geriye dönük kontrol yapılamıyor.</p>')
+           + f'<p class="cok-kucuk">Sonuçlar şimdiki fiyata göre, komisyon dahil (işlem başı %{y.get("maliyet_yuzde", 0):g}). '
+             'Kurallar yakın dönem verisiyle de test edildiği için geriye dönük sonuç biraz iyimser olabilir; gerçek ölçüm canlı karnededir.</p>')
+    return f'<div class="yon-izgara"><div class="kart">{sol}</div><div class="kart">{sag}</div></div>'
 
 
 def _pozisyon_karti(c: dict) -> str:
@@ -670,6 +723,12 @@ def _saglik_paneli(satirlar: list[dict]) -> str:
             f'<div style="columns:2 360px;column-gap:24px">{govde}</div></details>')
 
 
+def _sekme_yon(c: dict) -> str:
+    sg = ((c.get("yon") or {}).get("simdi") or {}).get("sinyal")
+    return {"LONG": '<span class="iyi" style="font-weight:800">▲ LONG</span>',
+            "SHORT": '<span class="kotu" style="font-weight:800">▼ SHORT</span>'}.get(sg, "")
+
+
 def _olay_detay(e: dict) -> str:
     p = []
     if e.get("beklenti"):
@@ -755,9 +814,9 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
                    'Likidasyon uyarısı, açık pozisyon ile fiyatın 1 saatte birlikte sert değişmesinden tahmin edilir.</p></div>')
 
     sekmeler = "".join(
-        f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>'
+        f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>{_sekme_yon(c)}'
         f'<span class="mono {_sinif(c["risk"]["ozet"].get("long_risk"))}">'
-        f'{"%" + str(c["risk"]["ozet"]["long_risk"]) if c["risk"]["ozet"].get("long_risk") is not None else "bekle"}</span></button>'
+        f'{"risk %" + str(c["risk"]["ozet"]["long_risk"]) if c["risk"]["ozet"].get("long_risk") is not None else ("" if _sekme_yon(c) else "bekle")}</span></button>'
         for s, c in coinler.items())
 
     hb = b.get("haberler") or {}
@@ -812,7 +871,7 @@ def nasil_calisir_html() -> str:
            ("kombinasyon", "7. Kombinasyon arama"), ("tutarlilik", "8. Tutarlılık nasıl ölçülür?"),
            ("derin", "8b. Derin tarama ve grafik"), ("net", "8c. Komisyon ve net kazanç"),
            ("simulasyon", "8d. Kasa simülasyonu"), ("karne", "8e. Canlı karne"), ("pozisyon", "8f. Pozisyon hesaplayıcı"),
-           ("risk-turleri", "9. Risk türleri"), ("sinyal-haritasi", "10. Sinyal haritası"), ("kirimlar", "11. Genel puan ve kırımlar"),
+           ("yon-sinyali", "8g. Yön sinyali ve geriye dönük kontrol"), ("risk-turleri", "9. Risk türleri"), ("sinyal-haritasi", "10. Sinyal haritası"), ("kirimlar", "11. Genel puan ve kırımlar"),
            ("dominans", "12. Dominanslar"), ("makro", "12b. Makro, ETF, opsiyon"), ("duygu", "13. Duygu ve vadeli"), ("haberler", "14. Haberler"),
            ("veri-durumu", "14b. Veri durumu paneli"), ("bildirim", "14c. Telegram ve uzaktan erişim"), ("okuma", "15. Panoyu okuma rehberi"), ("sinirlar", "16. Sınırlar ve uyarılar"), ("sozluk", "17. Sözlük")]
     toc_html = "".join(f'<a href="#{i}">{_e(a)}</a>' for i, a in toc)
@@ -938,6 +997,17 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <li><span><b>Pozisyon</b> = risk tutarı ÷ stop mesafesi. En fazla kasa × {config.MAX_KALDIRAC:g} kaldıraç. <b>Hedef</b> = 1,5 × stop mesafesi (risk/ödül 1:1,5).</span></li>
 <li><span>Kasa, risk yüzdesi ve maksimum kaldıraç ayarlar/kullanici.json dosyasından değiştirilir. Bu bir hesap makinesidir, tavsiye değildir.</span></li>
 </ul>"""))
+    s.append(bol("yon-sinyali", "8g. Yön sinyali ve geriye dönük kontrol", f"""
+<p><b>Yön sinyali</b> (LONG / SHORT / BEKLE): Son kapanan mumda aktif olan tüm tutarlı kaynaklar oy verir:</p>
+<ul class="liste">
+<li><span>Aktif kombinasyon kuralları (sonraki mum, gün sonu, derin tarama).</span></li>
+<li><span>Yapay zekâ modelleri; ama sadece o an güven eşiğini geçiyorlarsa.</span></li>
+<li><span>Her oyun ağırlığı tutarlılık − 0,5. Yani %90'lık bir kural, %70'lik bir kuralın iki katı ağırlıkta.</span></li>
+<li><span>İki tarafın ağırlığı birbirine çok yakınsa (fark %{int(KARARSIZLIK_ESIGI * 100)}'nin altında) ya da hiç aktif kaynak yoksa sonuç <b>BEKLE</b>.</span></li>
+</ul>
+<p><b>Geriye dönük kontrol:</b> 15, 30, 45 ve 60 dakika önceki mumda sistem hangi sinyali veriyordu? O an long ya da short açsaydın, şu anki fiyatla komisyon dahil ne durumda olurdun?
+“Sinyale uysaydın” sütunu, o anki sinyalin yönünde açılan işlemin sonucudur. ✓ fiyatın sinyal yönünde gittiğini gösterir.</p>
+<p class="kucuk">Kurallar yakın dönem verisiyle de test edildiği için bu tablo biraz iyimser olabilir. Gerçek ölçüm canlı karnededir.</p>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """
 <div class="tablo-sar"><table><thead><tr><th>Ad</th><th>Ne söyler?</th><th>Tutarlılık neyi ölçer?</th></tr></thead><tbody>
 <tr><td><b>Long riski</b></td><td>Şimdi long açarsan gün sonunda (TSİ 23:59) zararda olma ihtimali.</td><td>Model bu güvendeyken gün sonu yönünü ne sıklıkla doğru bildi.</td></tr>

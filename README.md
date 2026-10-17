@@ -69,6 +69,11 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
 
 ## Para tarafı: komisyon, simülasyon, karne, pozisyon
 
+- **Yön sinyali (LONG / SHORT / BEKLE):** O an aktif olan tüm tutarlı kural ve modellerin, tutarlılıkla ağırlıklı oylaması.
+  Coin sekmesinde ve her coinin üstünde görünür.
+- **Geriye dönük kontrol:** 15, 30, 45 ve 60 dakika önce sistem hangi sinyali veriyordu, o an long ya da short açsaydın
+  şu anki fiyatla komisyon dahil ne durumda olurdun.
+
 - **Komisyon sonrası net kazanç:** Her kural işlem gibi hesaplanır (giriş: sinyal mumu kapanışı, çıkış: hedefin bittiği mum).
   Maliyet vadeli için işlem başı %0,14, spot için %0,24 (komisyon + kayma). Test döneminde komisyondan sonra **zarar ettiren kural gösterilmez**.
   Kartlarda ortalama net, kâr faktörü ve son 20 oluşumdaki isabet yazar; düşüşteyse **ZAYIFLIYOR** rozeti çıkar.

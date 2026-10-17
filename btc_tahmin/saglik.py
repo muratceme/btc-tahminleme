@@ -177,6 +177,10 @@ def kontrol(rapor: dict) -> list[dict]:
         s.append(_satir(g, "Pozisyon hesaplayıcı", "ok" if pz.get("durum") == "var" else "normal",
                         f"{pz['yon']} · {pz['pozisyon_usd']:,.0f}$ · stop {pz['stop_yuzde']}%" if pz.get("durum") == "var"
                         else pz.get("neden", "")))
+        sm = ((c.get("yon") or {}).get("simdi") or {})
+        s.append(_satir(g, "Yön sinyali (LONG/SHORT)", "ok" if sm.get("sinyal") in ("LONG", "SHORT") else "normal",
+                        f"{sm.get('sinyal')} · güç %{sm.get('guc', 0) * 100:.0f}" if sm.get("sinyal") in ("LONG", "SHORT")
+                        else (sm.get("neden") or "Aktif tutarlı kaynak yok.")))
         aktif = len(c["sonraki_mum"]["aktif_kurallar"])
         s.append(_satir(g, "Şu an aktif sonraki mum kuralı", "ok" if aktif else "normal",
                         f"{aktif} kural" if aktif else "Son mumda tutarlı kombinasyon oluşmadı (sık olur)."))

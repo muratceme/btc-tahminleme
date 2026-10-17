@@ -35,6 +35,9 @@ Takvim olayı (FOMC, CPI vb.) eklemek için `takvim` listesine UTC tarihli kayı
 2. **Makro panel**: dominanslar (BTC.D, ETH.D, XRP.D, USDT.D, USDC.D, stable toplam) ve 24s/7g değişimleri, `dominans.yorum` maddeleri, Korku/Açgözlülük, funding / OI / long-short, yaklaşan olaylar.
 3. **Her coin için** (BTC, ETH, XRP):
    - Fiyat, 24s değişim.
+   - **Yön sinyali** (`yon.simdi`): LONG / SHORT / BEKLE, gücü ve dayanağı (en fazla 3 madde).
+   - **Geriye dönük** (`yon.geriye`): 15/30/45/60 dk önceki sinyal ve o an long/short açılsaydı şimdiki net sonuç; markdown tablo
+     `Ne zaman | O anki sinyal | Sinyale uysaydın | Long açsaydın | Short açsaydın`.
    - `risk.ozet.long_risk` / `short_risk` → "GÜN SONU LONG RİSKİ %X". Yoksa "tutarlı sinyal yok" de ve ham model tahminini *düşük güvenli* olarak ver.
    - `kirimli_long_risk`: puan kırımı dahil risk (ayrı satır, "bilgi amaçlı").
    - Risk tablosu: `risk.satirlar` → markdown tablo: `Etiket | Tutarlılık | Test n | Durum (SİNYAL/bekle) | Long risk | Short risk | Kaynak`. En fazla 10 satır.
