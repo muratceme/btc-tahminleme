@@ -5,6 +5,8 @@
     python -m btc_tahmin izle --dakika 15 # her N dakikada bir raporu yenile
     python -m btc_tahmin canli            # izle + http://localhost:8000 (telefondan da açılır)
     python -m btc_tahmin ozet             # son raporu (rapor.json) terminalde tekrar göster
+    python -m btc_tahmin kontrol          # her metrik geldi mi? (son rapora göre)
+    python -m btc_tahmin kontrol --kaynaklar  # dış kaynakları (dominans, F&G, vadeli, haber) şimdi tekrar dene
 """
 from __future__ import annotations
 
@@ -47,8 +49,22 @@ def main(argv=None):
         if ad == "canli":
             a.add_argument("--port", type=int, default=8000)
     alt.add_parser("ozet")
+    k = alt.add_parser("kontrol")
+    k.add_argument("--kaynaklar", action="store_true", help="dış veri kaynaklarını şimdi tekrar dene")
     args = p.parse_args(argv)
 
+    if args.komut == "kontrol":
+        from . import market, saglik
+        try:
+            r = report.json_oku()
+        except FileNotFoundError:
+            print("Henüz rapor yok. Önce: python -m btc_tahmin rapor")
+            return
+        if args.kaynaklar:
+            print("Dış kaynaklar tekrar deneniyor (dominans, korku/açgözlülük, vadeli, haberler) ...", flush=True)
+            r["baglam"] = market.baglam_topla(config.SEMBOLLER)
+        print(report.saglik_tablosu(saglik.kontrol(r)))
+        return
     if args.komut == "ozet":
         print(report.terminal(report.json_oku()))
         return

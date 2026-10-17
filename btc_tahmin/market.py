@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -16,12 +17,25 @@ import requests
 from . import config
 
 BASLIK = {"User-Agent": "btc-tahminleme/1.0"}
+# Bazı haber siteleri tanımadığı programları engelliyor; tarayıcı gibi görün
+TARAYICI = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/124.0 Safari/537.36", "Accept": "application/rss+xml, application/xml, text/xml, */*"}
 
 
-def _json(url, params=None):
-    r = requests.get(url, params=params, timeout=config.HTTP_TIMEOUT, headers=BASLIK)
-    r.raise_for_status()
-    return r.json()
+def _json(url, params=None, deneme: int = 4):
+    """GET + JSON. Hız sınırı (429) ve geçici sunucu hatalarında bekleyip tekrar dener."""
+    for i in range(deneme):
+        r = requests.get(url, params=params, timeout=config.HTTP_TIMEOUT, headers=BASLIK)
+        if r.status_code in (429, 500, 502, 503, 504) and i < deneme - 1:
+            bekle = float(r.headers.get("Retry-After") or 0) or (3 * 2 ** i)
+            time.sleep(min(bekle, 30))
+            continue
+        if r.status_code == 429:
+            raise RuntimeError("hız sınırı (429): kaynak çok fazla istek aldı, birkaç dakika sonra düzelir")
+        if r.status_code in (403, 451):
+            raise RuntimeError(f"erişim engellendi ({r.status_code}): kaynak bu bölgeden/ağdan erişime kapalı olabilir")
+        r.raise_for_status()
+        return r.json()
 
 
 # ---------------------------------------------------------------- dominanslar
@@ -51,6 +65,7 @@ def dominanslar() -> dict:
     try:
         seriler = {}
         for k, cid in DOM_COINLER.items():
+            time.sleep(2.5)   # ücretsiz CoinGecko dakikada ~10-30 istek kabul ediyor
             d = _json(f"{config.COINGECKO}/coins/{cid}/market_chart", {"vs_currency": "usd", "days": 8})
             s = pd.DataFrame(d["market_caps"], columns=["t", k])
             s["t"] = pd.to_datetime(s["t"], unit="ms").dt.floor("h")
@@ -114,23 +129,38 @@ def korku_acgozluluk() -> dict:
 
 
 def vadeli(sembol: str) -> dict:
-    out = {}
-    p = _json(f"{config.BINANCE_FUTURES}/fapi/v1/premiumIndex", {"symbol": sembol})
-    out["funding_yuzde"] = round(float(p["lastFundingRate"]) * 100, 4)
-    oi = _json(f"{config.BINANCE_FUTURES}/futures/data/openInterestHist",
-               {"symbol": sembol, "period": "1h", "limit": 25})
-    if oi:
-        a, b = float(oi[0]["sumOpenInterestValue"]), float(oi[-1]["sumOpenInterestValue"])
+    """Her alan ayrı denenir: biri gelmezse diğerleri yine gösterilir. Hatalar out["hatalar"]da."""
+    out: dict = {"hatalar": {}}
+    f = config.BINANCE_FUTURES
+
+    def dene(ad, fn):
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001
+            out["hatalar"][ad] = str(e)[:200]
+
+    def funding():
+        p = _json(f"{f}/fapi/v1/premiumIndex", {"symbol": sembol})
+        out["funding_yuzde"] = round(float(p["lastFundingRate"]) * 100, 4)
+
+    def oi():
+        d = _json(f"{f}/futures/data/openInterestHist", {"symbol": sembol, "period": "1h", "limit": 25})
+        a, b = float(d[0]["sumOpenInterestValue"]), float(d[-1]["sumOpenInterestValue"])
         out["oi_usd"] = round(b)
         out["oi_degisim_24s_yuzde"] = round((b / a - 1) * 100, 2)
-    ls = _json(f"{config.BINANCE_FUTURES}/futures/data/globalLongShortAccountRatio",
-               {"symbol": sembol, "period": "1h", "limit": 1})
-    if ls:
-        out["long_short_orani"] = round(float(ls[-1]["longShortRatio"]), 3)
-    tk = _json(f"{config.BINANCE_FUTURES}/futures/data/takerlongshortRatio",
-               {"symbol": sembol, "period": "1h", "limit": 4})
-    if tk:
-        out["taker_alis_satis"] = round(sum(float(x["buySellRatio"]) for x in tk) / len(tk), 3)
+
+    def ls():
+        d = _json(f"{f}/futures/data/globalLongShortAccountRatio", {"symbol": sembol, "period": "1h", "limit": 1})
+        out["long_short_orani"] = round(float(d[-1]["longShortRatio"]), 3)
+
+    def taker():
+        d = _json(f"{f}/futures/data/takerlongshortRatio", {"symbol": sembol, "period": "1h", "limit": 4})
+        out["taker_alis_satis"] = round(sum(float(x["buySellRatio"]) for x in d) / len(d), 3)
+
+    for ad, fn in (("funding", funding), ("acik_pozisyon", oi), ("long_short", ls), ("taker", taker)):
+        dene(ad, fn)
+    if len(out["hatalar"]) == 4:
+        raise RuntimeError("Binance Futures verisine ulaşılamadı: " + next(iter(out["hatalar"].values())))
     return out
 
 
@@ -153,23 +183,39 @@ JEOPOLITIK = ["war", "iran", "israel", "missile", "strike", "escalat", "ceasefir
 def haberler(saat: int = 24) -> dict:
     sinir = datetime.now(timezone.utc) - timedelta(hours=saat)
     basliklar = []
+    kaynak_durumu = {}
+    atom = "{http://www.w3.org/2005/Atom}"
     for url in config.HABER_RSS:
+        ad = re.sub(r"https?://(www\.)?", "", url).split("/")[0]
         try:
-            r = requests.get(url, timeout=config.HTTP_TIMEOUT, headers=BASLIK)
+            r = requests.get(url, timeout=config.HTTP_TIMEOUT, headers=TARAYICI)
+            r.raise_for_status()
             kok = ET.fromstring(r.content)
-            for it in kok.iter("item"):
-                t = (it.findtext("title") or "").strip()
-                tarih = it.findtext("pubDate")
+            ogeler = list(kok.iter("item")) or list(kok.iter(f"{atom}entry"))
+            adet = 0
+            for it in ogeler:
+                t = (it.findtext("title") or it.findtext(f"{atom}title") or "").strip()
+                tarih = it.findtext("pubDate") or it.findtext(f"{atom}updated") or it.findtext(f"{atom}published")
                 try:
-                    dt = parsedate_to_datetime(tarih) if tarih else None
+                    dt = parsedate_to_datetime(tarih) if tarih and not tarih[:4].isdigit() else (
+                        datetime.fromisoformat(tarih.replace("Z", "+00:00")) if tarih else None)
                 except (TypeError, ValueError):
                     dt = None
-                if dt and dt < sinir:
+                if not t or (dt and dt < sinir):
                     continue
-                basliklar.append({"baslik": t, "kaynak": re.sub(r"https?://(www\.)?", "", url).split("/")[0],
-                                  "zaman": dt.isoformat() if dt else None})
-        except Exception:  # noqa: BLE001
-            continue
+                adet += 1
+                basliklar.append({"baslik": t, "kaynak": ad, "zaman": dt.isoformat() if dt else None})
+            kaynak_durumu[ad] = f"{adet} başlık"
+        except Exception as e:  # noqa: BLE001
+            kaynak_durumu[ad] = f"HATA: {str(e)[:120]}"
+    # Aynı başlık birden çok kaynakta olabilir
+    goruldu, tekil = set(), []
+    for b in basliklar:
+        anahtar = b["baslik"].lower()[:80]
+        if anahtar not in goruldu:
+            goruldu.add(anahtar)
+            tekil.append(b)
+    basliklar = tekil
     toplam, jeo = 0, 0
     for b in basliklar:
         k = b["baslik"].lower()
@@ -180,7 +226,7 @@ def haberler(saat: int = 24) -> dict:
     basliklar.sort(key=lambda b: abs(b["skor"]), reverse=True)
     return {"adet": len(basliklar), "toplam_skor": toplam,
             "ortalama_skor": round(toplam / len(basliklar), 3) if basliklar else 0,
-            "jeopolitik_baslik_sayisi": jeo, "onemli": basliklar[:12]}
+            "jeopolitik_baslik_sayisi": jeo, "onemli": basliklar[:12], "kaynak_durumu": kaynak_durumu}
 
 
 # ---------------------------------------------------------------- olaylar & puan kırımı

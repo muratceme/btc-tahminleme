@@ -242,6 +242,8 @@ def calistir(aralik: str = config.VARSAYILAN_ARALIK, semboller=None, hizli: bool
         "uyari": ("Bu sistem istatistiksel bir karar destek aracıdır, yatırım tavsiyesi değildir. "
                   "Tutarlılık oranları geçmiş TEST dönemine aittir; piyasa rejimi değişirse düşebilir."),
     }
+    from . import saglik
+    rapor["saglik"] = saglik.kontrol(rapor)
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
     (config.CIKTI_DIR / "rapor.json").write_text(json.dumps(rapor, ensure_ascii=False, indent=1, default=str),
                                                   encoding="utf-8")

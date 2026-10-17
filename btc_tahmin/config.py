@@ -58,5 +58,8 @@ HABER_RSS = [
     "https://www.coindesk.com/arc/outboundfeeds/rss/",
     "https://cointelegraph.com/rss",
     "https://decrypt.co/feed",
+    "https://bitcoinmagazine.com/.rss/full/",
+    "https://cryptoslate.com/feed/",
+    "https://www.theblock.co/rss.xml",
 ]
 HTTP_TIMEOUT = 20

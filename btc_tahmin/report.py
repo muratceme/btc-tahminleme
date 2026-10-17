@@ -76,6 +76,14 @@ def terminal(rapor: dict) -> str:
                 s.append(f"   {renk}%{r['tutarlilik']*100:.0f} {metin}{SIFIR} (test n={r['test_n']}): "
                          + " + ".join(kosul_bilgisi(k)["etiket"] for k in r["kosullar"]))
     s.append("")
+    sg = rapor.get("saglik") or []
+    if sg:
+        hata = [x for x in sg if x["durum"] == "hata"]
+        s.append(f"Veri durumu: {YESIL}✓ {sum(x['durum'] == 'ok' for x in sg)} geldi{SIFIR} · "
+                 f"{GRI}○ {sum(x['durum'] == 'normal' for x in sg)} boş ama normal{SIFIR} · "
+                 f"{KIRMIZI if hata else GRI}✗ {len(hata)} hata{SIFIR}")
+        for x in hata:
+            s.append(f"   {KIRMIZI}✗ {x['metrik']}{SIFIR}: {x['aciklama']}")
     s.append(f"{GRI}{rapor['uyari']}{SIFIR}")
     s.append(f"Pano: {config.CIKTI_DIR / 'rapor.html'}")
     return "\n".join(s)
@@ -100,3 +108,17 @@ def kaydet(rapor: dict, yenile_sn: int | None = None):
 
 def json_oku():
     return json.loads((config.CIKTI_DIR / "rapor.json").read_text(encoding="utf-8"))
+
+
+def saglik_tablosu(satirlar: list[dict]) -> str:
+    isaret = {"ok": f"{YESIL}✓ geldi        {SIFIR}", "normal": f"{GRI}○ boş · normal {SIFIR}", "hata": f"{KIRMIZI}✗ HATA         {SIFIR}"}
+    s, grup = [], None
+    for x in satirlar:
+        if x["grup"] != grup:
+            grup = x["grup"]
+            s.append(f"\n{KALIN}{grup}{SIFIR}")
+        s.append(f"  {isaret[x['durum']]} {x['metrik']:<38} {GRI}{x['aciklama']}{SIFIR}")
+    say = {d: sum(1 for x in satirlar if x["durum"] == d) for d in ("ok", "normal", "hata")}
+    s.append(f"\nToplam: ✓ {say['ok']} geldi · ○ {say['normal']} boş ama normal · ✗ {say['hata']} hata")
+    s.append("○ = o an söylenecek güvenilir bir şey yok (hata değil).  ✗ = gelmesi gereken veri gelmedi, sebebi yanında.")
+    return "\n".join(s)

@@ -103,7 +103,7 @@ tr.pasif td{opacity:.5}.satir-not{color:var(--soluk);font-size:12px;margin-top:4
 /* sinyal haritası */
 .denge{display:flex;height:8px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,.06);margin:6px 0 4px}
 .denge .b{background:var(--iyi)}.denge .a{background:var(--kotu)}.denge .x{background:var(--orta)}
-.grup{margin-top:12px}.grup h4{margin:0 0 4px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--soluk2)}
+.grup{margin-top:12px;break-inside:avoid}.saglik summary::-webkit-details-marker{display:none}.grup h4{margin:0 0 4px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--soluk2)}
 /* kurallar */
 .kural{border:1px solid var(--cizgi);border-radius:10px;padding:12px;margin-bottom:10px;background:rgba(255,255,255,.015)}
 .kural-ust{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
@@ -453,6 +453,38 @@ def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str
 <script>{JS}</script></body></html>"""
 
 
+def _degisim_hucre(v) -> str:
+    if v is None:
+        return '<td class="sayi notr" title="Veri alınamadı, Veri durumu paneline bak">—</td>'
+    return f'<td class="sayi {"iyi" if v >= 0 else "kotu"}">{v:+.2f}</td>'
+
+
+def _saglik_paneli(satirlar: list[dict]) -> str:
+    if not satirlar:
+        return ""
+    say = {d: sum(1 for x in satirlar if x["durum"] == d) for d in ("ok", "normal", "hata")}
+    isaret = {"ok": ('<span class="iyi">✓</span>', "geldi"), "normal": ('<span class="notr">○</span>', "boş · normal"),
+              "hata": ('<span class="kotu">✗</span>', "HATA")}
+    gruplar: dict[str, list[dict]] = {}
+    for x in satirlar:
+        gruplar.setdefault(x["grup"], []).append(x)
+    govde = "".join(
+        f'<div class="grup"><h4>{_e(g)}</h4><ul class="liste">' + "".join(
+            f'<li><span>{isaret[x["durum"]][0]} {_e(x["metrik"])}<div class="cok-kucuk">{_e(x["aciklama"])}</div></span>'
+            f'<span class="etiket-sag {"kotu" if x["durum"] == "hata" else "notr"}">{isaret[x["durum"]][1]}</span></li>' for x in xs)
+        + "</ul></div>" for g, xs in gruplar.items())
+    durum = ("kotu", f"{say['hata']} metrik gelmedi. Ayrıntı ve sebep için tıkla.") if say["hata"] else \
+        ("iyi", "Tüm veri kaynakları çalışıyor.")
+    return (f'<details class="kart bolum saglik"{" open" if say["hata"] else ""}><summary style="list-style:none;cursor:pointer">'
+            f'<div class="kart-baslik" style="margin:0"><span>Veri durumu · <span class="iyi">✓ {say["ok"]} geldi</span> · '
+            f'<span class="notr">○ {say["normal"]} boş ama normal</span> · <span class="{"kotu" if say["hata"] else "notr"}">✗ {say["hata"]} hata</span></span>'
+            f'<a class="bilgi" href="nasil-calisir.html#veri-durumu" title="Bu nedir?">?</a></div>'
+            f'<div class="kucuk {durum[0]}" style="margin-top:6px">{durum[1]}</div></summary>'
+            f'<p class="cok-kucuk" style="margin-top:12px">○ işaretli metrikler boşsa bu bir hata değildir: sistem o an söyleyecek güvenilir bir şey bulamamıştır. '
+            f'✗ işaretliler gelmesi gereken ama gelmeyen verilerdir; sebebi yanında yazar.</p>'
+            f'<div style="columns:2 360px;column-gap:24px">{govde}</div></details>')
+
+
 def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
     gp = rapor["genel_puan"]
     b = rapor["baglam"]
@@ -468,8 +500,9 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
     dom = (b.get("dominans") or {}).get("anlik") or {}
     for k in ("btc", "eth", "xrp", "usdt", "usdc"):
         if k in dom:
-            dg = ((b.get("dominans") or {}).get("degisim") or {}).get(k, {}).get("24s", 0)
-            oge.append(f'<span><b>{k.upper()}.D</b>{dom[k]:.2f}% <span class="{"iyi" if dg >= 0 else "kotu"}">{dg:+.2f}</span></span>')
+            dg = ((b.get("dominans") or {}).get("degisim") or {}).get(k, {}).get("24s")
+            ek = "" if dg is None else f' <span class="{"iyi" if dg >= 0 else "kotu"}">{dg:+.2f}</span>'
+            oge.append(f'<span><b>{k.upper()}.D</b>{dom[k]:.2f}%{ek}</span>')
     fg = b.get("korku_acgozluluk")
     if fg:
         oge.append(f'<span><b>KORKU/AÇGÖZLÜLÜK</b>{fg["deger"]} · {_e(fg["sinif"])}</span>')
@@ -501,8 +534,7 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
         dd = (b.get("dominans") or {}).get("degisim") or {}
         sat = "".join(
             f'<tr><td><b>{k.upper()}.D</b></td><td class="sayi">{dom[k]:.2f}%</td>'
-            f'<td class="sayi {"iyi" if dd.get(k, {}).get("24s", 0) >= 0 else "kotu"}">{dd.get(k, {}).get("24s", 0):+.2f}</td>'
-            f'<td class="sayi {"iyi" if dd.get(k, {}).get("7g", 0) >= 0 else "kotu"}">{dd.get(k, {}).get("7g", 0):+.2f}</td></tr>'
+            f'{_degisim_hucre(dd.get(k, {}).get("24s"))}{_degisim_hucre(dd.get(k, {}).get("7g"))}</tr>'
             for k in ("btc", "eth", "xrp", "usdt", "usdc"))
         sat += (f'<tr><td><b>STABLE.D</b></td><td class="sayi">{dom["stable_toplam"]:.2f}%</td><td></td><td></td></tr>'
                 f'<tr><td><b>OTHERS.D</b></td><td class="sayi">{dom["others"]:.2f}%</td><td></td><td></td></tr>')
@@ -513,9 +545,11 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
     else:
         kart_dom = f'<div class="kart">{_baslik("Dominanslar", "dominans")}<p class="kucuk">Dominans verisi alınamadı.</p></div>'
 
-    vd = "".join(f'<tr><td><b>{_e(s.replace("USDT", ""))}</b></td><td class="sayi">{_e(v.get("funding_yuzde"))}%</td>'
-                 f'<td class="sayi">{_e(v.get("oi_degisim_24s_yuzde"))}%</td><td class="sayi">{_e(v.get("long_short_orani"))}</td>'
-                 f'<td class="sayi">{_e(v.get("taker_alis_satis"))}</td></tr>' for s, v in (b.get("vadeli") or {}).items())
+    def _v(x, ek=""):
+        return "—" if x is None else f"{_e(x)}{ek}"
+    vd = "".join(f'<tr><td><b>{_e(s.replace("USDT", ""))}</b></td><td class="sayi">{_v(v.get("funding_yuzde"), "%")}</td>'
+                 f'<td class="sayi">{_v(v.get("oi_degisim_24s_yuzde"), "%")}</td><td class="sayi">{_v(v.get("long_short_orani"))}</td>'
+                 f'<td class="sayi">{_v(v.get("taker_alis_satis"))}</td></tr>' for s, v in (b.get("vadeli") or {}).items())
     kart_vadeli = (f'<div class="kart">{_baslik("Vadeli piyasa", "vadeli")}<div class="tablo-sar"><table><thead><tr><th>Çift</th>'
                    f'<th class="sayi">Funding</th><th class="sayi">OI 24s</th><th class="sayi">L/S</th><th class="sayi">Taker</th></tr></thead>'
                    f'<tbody>{vd or "<tr><td colspan=5 class=kucuk>veri yok</td></tr>"}</tbody></table></div>'
@@ -533,6 +567,7 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
     hatalar = "".join(f"<li><span>{_e(k)}: {_e(str(v)[:160])}</span></li>" for k, v in (b.get("hatalar") or {}).items())
 
     govde = f"""<main>
+{_saglik_paneli(rapor.get("saglik") or [])}
 <div class="izgara-4">{kart_puan}{kart_fg}{kart_dom}{kart_vadeli}</div>
 <div class="sekmeler" role="tablist">{sekmeler}</div>
 {"".join(_coin(c, gp) for c in coinler.values())}
@@ -576,7 +611,7 @@ def nasil_calisir_html() -> str:
            ("kombinasyon", "7. Kombinasyon arama"), ("tutarlilik", "8. Tutarlılık nasıl ölçülür?"),
            ("derin", "8b. Derin tarama ve grafik"), ("risk-turleri", "9. Risk türleri"), ("sinyal-haritasi", "10. Sinyal haritası"), ("kirimlar", "11. Genel puan ve kırımlar"),
            ("dominans", "12. Dominanslar"), ("duygu", "13. Duygu ve vadeli"), ("haberler", "14. Haberler"),
-           ("okuma", "15. Panoyu okuma rehberi"), ("sinirlar", "16. Sınırlar ve uyarılar"), ("sozluk", "17. Sözlük")]
+           ("veri-durumu", "14b. Veri durumu paneli"), ("okuma", "15. Panoyu okuma rehberi"), ("sinirlar", "16. Sınırlar ve uyarılar"), ("sozluk", "17. Sözlük")]
     toc_html = "".join(f'<a href="#{i}">{_e(a)}</a>' for i, a in toc)
 
     def bol(i, baslik, icerik):
@@ -710,6 +745,14 @@ Sebebi şu: Savaş gibi olaylar geçmiş veride yeterince yok ve ne zaman bitece
     s.append(bol("haberler", "14. Haberler", """
 <p>Son 24 saatin başlıkları üç kaynaktan çekilir ve anahtar kelimeyle puanlanır. Olumlu kelimeler: approval, inflow, rally, rate cut, ceasefire… Olumsuz kelimeler: hack, war, ban, crash, lawsuit, sanction…
 Puan basit ve hızlıdır; nüansı kaçırabilir. Bu yüzden modellere girmez, sadece kırım ve bilgi için kullanılır. Jeopolitik kelimeler 3+ başlıkta geçiyorsa sana manuel kırım eklemeni hatırlatır.</p>"""))
+    s.append(bol("veri-durumu", "14b. Veri durumu paneli", """
+<p>Panonun en üstündeki panel her metriği tek tek kontrol eder ve üç durumdan birini gösterir:</p>
+<ul class="liste">
+<li><span><span class="iyi">✓ geldi</span>: Veri alındı ve hesaplandı.</span></li>
+<li><span><span class="notr">○ boş ama normal</span>: Boş olması beklenen bir durum. Örneğin hiçbir model %70+ güvende değilse long riski boş kalır, 48 saat içinde olay yoksa olay listesi boştur. Bu bir hata değildir.</span></li>
+<li><span><span class="kotu">✗ hata</span>: Gelmesi gereken veri gelmedi. Yanında sebebi yazar. Örneğin hız sınırı (429) birkaç dakikada kendiliğinden düzelir; erişim engeli (403) için farklı ağ veya VPN gerekebilir.</span></li>
+</ul>
+<p>Terminalde <span class="mono">python -m btc_tahmin kontrol</span> yazarak aynı listeyi görebilirsin. <span class="mono">--kaynaklar</span> eklersen dış kaynaklar o an tekrar denenir.</p>"""))
     s.append(bol("okuma", "15. Panoyu okuma rehberi", """
 <ol>
 <li><b>Üstteki genel puana bak.</b> %90 üstü normal ortam. %70-85 arasında pozisyon boyutunu küçült. %70 altında çok dikkatli ol.</li>
