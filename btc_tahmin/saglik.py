@@ -162,13 +162,14 @@ def kontrol(rapor: dict) -> list[dict]:
         s.append(_satir(g, "Max düşüş sınırları", "ok" if md else "hata",
                         ", ".join(f"{k}: {v}%" for k, v in md.items()) if md else "Yeterli geçmiş veri yok (en az birkaç hafta gerekir)."))
         ks = c.get("kural_sayisi", {})
+        zr = c.get("net_zararli_sayisi", {})
         s.append(_satir(g, "Kural kütüphanesi (sonraki mum)", "ok" if ks.get("sonraki_mum") else "normal",
-                        f"{ks.get('sonraki_mum', 0)} kural" if ks.get("sonraki_mum") else "Test döneminde %70+ tutan kural bulunamadı."))
+                        f"{ks.get('sonraki_mum', 0)} kural ({zr.get('sonraki_mum', 0)} tanesi komisyon sonrası zararlı)" if ks.get("sonraki_mum") else "Test döneminde %70+ tutan kural bulunamadı."))
         s.append(_satir(g, "Kural kütüphanesi (gün sonu)", "ok" if ks.get("gun_sonu") else "normal",
                         f"{ks.get('gun_sonu', 0)} kural" if ks.get("gun_sonu") else
                         "Gün sonu yönü için %70+ tutan kombinasyon yok. Bu sık görülür: gün sonu yönü zor tahmin edilir."))
         s.append(_satir(g, "Derin tarama kütüphanesi (%85+)", "ok" if ks.get("derin") else "normal",
-                        f"{ks.get('derin', 0)} kural" if ks.get("derin") else "%85+ tutan 3-7 koşullu kombinasyon bulunamadı."))
+                        f"{ks.get('derin', 0)} kural ({zr.get('derin', 0)} tanesi komisyon sonrası zararlı)" if ks.get("derin") else "%85+ tutan 3-7 koşullu kombinasyon bulunamadı."))
         sim = (c.get("simulasyon") or {}).get("derin")
         s.append(_satir(g, "Kasa simülasyonu (derin kurallar)", "ok" if sim else "normal",
                         f"{sim['baslangic_kasa']:,.0f}$ → {sim['son_kasa']:,.0f}$ ({sim['islem']} işlem)" if sim else

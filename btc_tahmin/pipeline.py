@@ -19,7 +19,7 @@ def _kural_onbellek(sembol, aralik):
     return config.CIKTI_DIR / f"kurallar_{sembol}_{aralik}.json"
 
 
-KURAL_SURUM = 3   # önbellek biçimi değişince eski önbellek yok sayılır
+KURAL_SURUM = 4   # önbellek biçimi değişince eski önbellek yok sayılır
 
 
 def kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli: bool) -> dict[str, list[dict]]:
@@ -254,6 +254,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "aktif_tum": [{k: r[k] for k in ("id", "hedef", "yon", "tutarlilik", "kosullar")}
                       for liste in kurallar.values() for r in liste if r["aktif_su_an"]],
         "kural_sayisi": {k: len(v) for k, v in kurallar.items()},
+        "net_zararli_sayisi": {k: sum(1 for r in v if r.get("net_zararli")) for k, v in kurallar.items()},
     }
 
 

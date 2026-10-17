@@ -100,7 +100,12 @@ def main(argv=None):
         try:
             sunucu.baslat(args.port)
         except OSError:
-            print(f"HATA: {args.port} portu kullanımda. Başka port dene: --port 8080", file=sys.stderr)
+            print(f"""
+HATA: {args.port} portu başka bir program tarafından kullanılıyor.
+Büyük ihtimalle programın ESKİ bir kopyası hâlâ açık ve eski sayfayı göstermeye devam ediyor.
+Çözüm: Açık olan TÜM siyah pencereleri kapat (ya da Görev Yöneticisi'nde 'Python' işlemlerini sonlandır),
+sonra calistir.bat'ı tekrar çalıştır. Bundan sonraki sürümler eski kopyayı kendisi kapatır.
+""", file=sys.stderr)
             return
         adres = f"http://localhost:{args.port}"
         ip = sunucu.yerel_ip()

@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import base64
 import hmac
+import json
+import os
+import secrets
 import re
 import shutil
 import socket
@@ -28,6 +31,11 @@ Bu sayfa 15 saniyede bir kendini yeniler.</p></div></body></html>"""
 
 SIFRE: str | None = None     # ayarlanırsa pano kullanıcı adı "kripto" + bu şifreyle korunur
 KULLANICI = "kripto"
+_KAPAT_ANAHTARI = secrets.token_urlsafe(16)   # yeni açılan programın eskisini kapatabilmesi için
+
+
+def _kilit_dosyasi():
+    return config.VERI_DIR / "sunucu.json"
 
 
 class _Isleyici(SimpleHTTPRequestHandler):
@@ -44,6 +52,18 @@ class _Isleyici(SimpleHTTPRequestHandler):
         return hmac.compare_digest(k, KULLANICI) and hmac.compare_digest(p, SIFRE)
 
     def do_GET(self):  # noqa: N802
+        if self.path.startswith("/__kapat") and self.client_address[0] in ("127.0.0.1", "::1"):
+            # Yeni açılan program eskisini kapatıyor (anahtar yalnızca bu bilgisayardaki dosyada)
+            if self.path == f"/__kapat?anahtar={_KAPAT_ANAHTARI}":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"kapaniyor")
+                print("\nYeni bir pencerede program yeniden başlatıldı; bu pencere kapanıyor.", flush=True)
+                threading.Timer(0.5, lambda: os._exit(0)).start()
+            else:
+                self.send_response(403)
+                self.end_headers()
+            return
         if not self._yetkili():
             self.send_response(401)
             self.send_header("WWW-Authenticate", 'Basic realm="Kripto Risk Terminali"')
@@ -88,10 +108,41 @@ class _Sunucu(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+def _eskiyi_kapat(port: int) -> bool:
+    """Aynı portta çalışan eski kopyamızı kapatmayı dener."""
+    import urllib.request
+    try:
+        bilgi = json.loads(_kilit_dosyasi().read_text(encoding="utf-8"))
+        if int(bilgi.get("port", -1)) != port:
+            return False
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/__kapat?anahtar={bilgi['anahtar']}", timeout=3).read()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def baslat(port: int = 8000) -> ThreadingHTTPServer:
+    """Sunucuyu başlatır. Port doluysa ve doluluk eski bir kopyamızdan geliyorsa onu kapatıp yerine geçer."""
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
-    sunucu = _Sunucu(("0.0.0.0", port), partial(_Isleyici, directory=str(config.CIKTI_DIR)))
+    try:
+        sunucu = _Sunucu(("0.0.0.0", port), partial(_Isleyici, directory=str(config.CIKTI_DIR)))
+    except OSError:
+        if not _eskiyi_kapat(port):
+            raise
+        print("Eski açık kopya kapatıldı, yerine geçiliyor ...", flush=True)
+        for _ in range(20):
+            time.sleep(0.5)
+            try:
+                sunucu = _Sunucu(("0.0.0.0", port), partial(_Isleyici, directory=str(config.CIKTI_DIR)))
+                break
+            except OSError:
+                continue
+        else:
+            raise
     threading.Thread(target=sunucu.serve_forever, daemon=True).start()
+    config.VERI_DIR.mkdir(parents=True, exist_ok=True)
+    _kilit_dosyasi().write_text(json.dumps({"port": port, "anahtar": _KAPAT_ANAHTARI, "pid": os.getpid(),
+                                            "surum": config.SURUM}), encoding="utf-8")
     return sunucu
 
 

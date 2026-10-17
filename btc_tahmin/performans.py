@@ -93,14 +93,15 @@ def kural_performansi(r: dict, o, KT, hedef) -> dict | None:
 
 
 def performans_ekle_ve_ele(kurallar: list[dict], o, KT, hedef) -> list[dict]:
-    """Her kurala performans ekler; komisyon sonrası test döneminde zarar ettirenleri eler."""
+    """Her kurala performans ekler; komisyon sonrası test döneminde zarar ettirenleri işaretler (ayara göre eler)."""
     kalan = []
     for r in kurallar:
         p = kural_performansi(r, o, KT, hedef)
         if p is None:
             continue
         r["performans"] = p
-        if config.NET_ZARARLI_KURALLARI_ELE and p["test"].get("ort_net", 0) <= 0:
+        r["net_zararli"] = bool(p["test"].get("islem") and p["test"].get("ort_net", 0) <= 0)
+        if config.NET_ZARARLI_KURALLARI_ELE and r["net_zararli"]:
             continue
         kalan.append(r)
     return kalan

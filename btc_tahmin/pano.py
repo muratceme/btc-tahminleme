@@ -367,7 +367,10 @@ def _kural_karti(r: dict, aralik: str, sembol: str | None = None) -> str:
     rozet = ""
     if r.get("emekli"):
         rozet += '<span class="rozet kotu" title="Canlı karnede isabeti düştü; aktif listelerden çıkarıldı">EMEKLİ</span>'
-    elif p.get("yaslaniyor"):
+    if r.get("net_zararli"):
+        rozet += ('<span class="rozet orta" title="Yön tutuyor ama hareket küçük; komisyon düşülünce test döneminde ortalama zarar">'
+                  'KOMİSYONA YENİLİYOR</span>')
+    if not r.get("emekli") and p.get("yaslaniyor"):
         rozet += (f'<span class="rozet orta" title="Son {p.get("son_n")} oluşumda isabet %{(p.get("son_oran") or 0)*100:.0f}">'
                   'ZAYIFLIYOR</span>')
     return (f'<div class="kural"><div class="kural-ust"><span class="rozet {sinif}">{"▲" if yukselis else "▼"} {_e(hedef)}</span>'
