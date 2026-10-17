@@ -686,7 +686,7 @@ def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str
 <title>{_e(baslik)}</title>{FONT}<style>{CSS}</style></head>
 <body data-ts="{_e(ts)}" data-yenile="{yenile or 0}">
 <header class="ust-bar"><div class="ust-ic"><div class="marka"><span class="elmas"></span>KRİPTO RİSK TERMİNALİ<small>PRO</small></div>
-<nav class="menu">{menu}</nav><div class="canli">{canli}</div></div>{serit}</header>
+<nav class="menu">{menu}</nav><div class="canli">{canli}<span class="cok-kucuk mono" title="Kod sürümü (git)">sürüm {_e(config.SURUM)}</span></div></div>{serit}</header>
 {govde}
 <script>{JS}</script></body></html>"""
 

@@ -59,6 +59,7 @@ def main(argv=None):
     k = alt.add_parser("kontrol")
     k.add_argument("--kaynaklar", action="store_true", help="dış veri kaynaklarını şimdi tekrar dene")
     args = p.parse_args(argv)
+    print(f"Kripto Risk Terminali · sürüm {config.SURUM}", flush=True)
 
     if args.komut == "telegram":
         from . import bildirim

@@ -3,6 +3,19 @@ import json
 from pathlib import Path
 
 KOK = Path(__file__).resolve().parent.parent
+
+
+def _surum() -> str:
+    """Çalışan kodun git sürümü (panoda gösterilir; güncelleme gelmiş mi anlamak için)."""
+    import subprocess
+    try:
+        return subprocess.run(["git", "log", "-1", "--format=%h · %cd", "--date=format:%d.%m %H:%M"], cwd=KOK,
+                              capture_output=True, text=True, timeout=5).stdout.strip() or "bilinmiyor"
+    except (OSError, subprocess.SubprocessError):
+        return "bilinmiyor"
+
+
+SURUM = _surum()
 VERI_DIR = KOK / "veri"          # indirilen mumlar ve önbellek
 CIKTI_DIR = KOK / "cikti"        # rapor.html, rapor.json, kurallar.csv
 AYAR_DIR = KOK / "ayarlar"       # olaylar.json (puan kırımları, takvim)
