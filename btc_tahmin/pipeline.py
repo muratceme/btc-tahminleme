@@ -19,7 +19,7 @@ def _kural_onbellek(sembol, aralik):
     return config.CIKTI_DIR / f"kurallar_{sembol}_{aralik}.json"
 
 
-KURAL_SURUM = 4   # önbellek biçimi değişince eski önbellek yok sayılır
+KURAL_SURUM = 5   # önbellek biçimi değişince eski önbellek yok sayılır
 
 
 def kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli: bool) -> dict[str, list[dict]]:
@@ -144,8 +144,8 @@ def risk_tablosu(yon_satirlari, kurallar_gs, dusus_satirlari, kirim) -> dict:
     # Özet: sinyal veren yön satırlarının tutarlılık ağırlıklı ortalaması
     aktif = [s for s in satirlar if s["tur"].startswith("Yön") and s["sinyal_var"]]
     ozet = {"long_risk": None, "short_risk": None, "dayanak_sayisi": len(aktif)}
-    if aktif:
-        w = [(s["tutarlilik"] - 0.5) for s in aktif]
+    w = [sinyal.agirlik(s["tutarlilik"], s["test_n"]) for s in aktif]
+    if aktif and sum(w) > 0:
         lr = sum(wi * s["long_risk"] for wi, s in zip(w, aktif)) / sum(w)
         ozet.update(long_risk=round(lr, 1), short_risk=round(100 - lr, 1),
                     en_tutarli=max(s["tutarlilik"] for s in aktif))
@@ -205,6 +205,30 @@ def _degisim_24s(o: pd.DataFrame):
     return round(float(o["close"].iloc[-1] / once["close"].iloc[-1] - 1) * 100, 2)
 
 
+def veri_boslugu(m: pd.DataFrame, aralik: str) -> dict:
+    """Mum serisindeki eksikler: Binance bakım/kesinti anlarında mum gelmez, indikatörler sessizce bozulur."""
+    sure = pd.Timedelta(aralik.replace("m", "min"))
+    fark = m["time"].diff().iloc[1:]
+    bosluk = fark[fark > sure]
+    eksik = int(((bosluk / sure) - 1).sum()) if len(bosluk) else 0
+    son7 = m["time"].iloc[-1] - pd.Timedelta(days=7)
+    yakin = bosluk[m["time"].iloc[1:].loc[bosluk.index] >= son7] if len(bosluk) else bosluk
+    return {"eksik_mum": eksik, "bosluk_sayisi": int(len(bosluk)), "eksik_yuzde": round(100 * eksik / max(1, len(m) + eksik), 3),
+            "son7_gun_bosluk": int(len(yakin)),
+            "son_bosluk": m["time"].iloc[1:].loc[bosluk.index[-1]].isoformat() if len(bosluk) else None}
+
+
+def sahte_kesif_oku(sembol: str, aralik: str) -> dict | None:
+    """'python -m btc_tahmin sahte' çıktısı varsa okur (kaç kuralın şans eseri olabileceği)."""
+    f = config.CIKTI_DIR / f"sahte_{sembol}_{aralik}.json"
+    if not f.exists():
+        return None
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: bool, emekli: set | None = None) -> dict:
     o, K, hedef = veri_seti_hazirla(mumlar, ana=sembol)
     KT = pd.concat([K, ince_kosullar(o)], axis=1)
@@ -255,6 +279,8 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
                       for liste in kurallar.values() for r in liste if r["aktif_su_an"]],
         "kural_sayisi": {k: len(v) for k, v in kurallar.items()},
         "net_zararli_sayisi": {k: sum(1 for r in v if r.get("net_zararli")) for k, v in kurallar.items()},
+        "veri_boslugu": veri_boslugu(mumlar[sembol], aralik),
+        "sahte_kesif": sahte_kesif_oku(sembol, aralik),
     }
 
 

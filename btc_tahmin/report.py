@@ -63,10 +63,11 @@ def terminal(rapor: dict) -> str:
                          f"{r['long_risk']:>5}% {r['short_risk']:>5}%  {r['kaynak'][:70]}")
         y = c.get("yon") or {}
         sm = y.get("simdi") or {}
-        if sm:
-            renk = {"LONG": YESIL, "SHORT": KIRMIZI}.get(sm["sinyal"], GRI)
-            s.append(f"  {KALIN}YÖN SİNYALİ: {renk}{sm['sinyal']}{SIFIR} (güç %{sm.get('guc', 0) * 100:.0f}, "
-                     f"{sm.get('long_oy', 0)} long / {sm.get('short_oy', 0)} short oy)")
+        for ad, blok in (("KISA VADE", sm), ("GÜN SONU", y.get("gun_sonu") or {})):
+            if blok:
+                renk = {"LONG": YESIL, "SHORT": KIRMIZI}.get(blok["sinyal"], GRI)
+                s.append(f"  {KALIN}YÖN SİNYALİ ({ad}): {renk}{blok['sinyal']}{SIFIR} (güç %{blok.get('guc', 0) * 100:.0f}, "
+                         f"{blok.get('long_oy', 0)} long / {blok.get('short_oy', 0)} short oy)")
         for r in y.get("geriye", []):
             uy = "işlem yok" if r["sinyale_gore_net"] is None else f"{r['sinyale_gore_net']:+.2f}%"
             s.append(f"   {r['dakika']:>2} dk önce sinyal {r['sinyal']:<5} · long açsaydın {r['long_net']:+.2f}% · "

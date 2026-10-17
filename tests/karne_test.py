@@ -52,5 +52,9 @@ def main():
     print("OK - karne doğru")
 
 
+def test_karne():
+    main()
+
+
 if __name__ == "__main__":
     main()

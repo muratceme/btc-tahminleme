@@ -36,6 +36,7 @@ Python 3.10 veya daha yenisi gerekir. API anahtarı gerekmez; tüm kaynaklar her
 | `python -m btc_tahmin canli --tunel` | Evden dışarıdan (mobil veriyle) erişim: Cloudflare tüneliyle `https://….trycloudflare.com` adresi açar, panoyu otomatik şifreler. Bir kez `winget install --id Cloudflare.cloudflared` gerekir |
 | `python -m btc_tahmin telegram` | Telefona bildirim kurulumu (adım adım). Sonra güçlü sinyaller Telegram'a mesaj olarak gelir |
 | `python -m btc_tahmin karne` | **Canlı karne:** sistemin gerçek sinyallerinin isabeti ve komisyon sonrası net sonucu |
+| `python -m btc_tahmin sahte --tekrar 5` | **Sahte keşif testi:** bulunan kuralların kaçı şans eseri olabilir? Hedefleri tam gün kaydırıp madenciliği 5 kez tekrarlar (coin başına ~5-15 dk). Sonuç panoda ve Veri durumu panelinde görünür |
 | `python -m btc_tahmin rapor --aralik 1h` | Diğer zaman dilimleri: 5m, 10m, 15m, 30m, 1h, 4h |
 | `python -m btc_tahmin kontrol` | **Her metrik geldi mi?** ✓ geldi / ○ boş ama normal / ✗ hata (sebebiyle). `--kaynaklar` ile dış kaynakları şimdi tekrar dener |
 
@@ -69,13 +70,17 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
 
 ## Para tarafı: komisyon, simülasyon, karne, pozisyon
 
-- **Yön sinyali (LONG / SHORT / BEKLE):** O an aktif olan tüm tutarlı kural ve modellerin, tutarlılıkla ağırlıklı oylaması.
-  Coin sekmesinde ve her coinin üstünde görünür.
+- **Yön sinyali (LONG / SHORT / BEKLE):** O an aktif olan tüm tutarlı kural ve modellerin oylaması. İki ayrı ufuk vardır:
+  **kısa vade** (sonraki mum, 2-8 mum sonra, seri mumlar) ve **gün sonu**; farklı vadeler aynı oya karıştırılmaz.
+  Her kaynağın ağırlığı tutarlılığının **Wilson alt sınırı** − 0,5'tir: az örnekli bir kural, aynı yüzdeyle çok örnekli
+  bir kuraldan daha az söz hakkı alır. Coin sekmesinde ve her coinin üstünde görünür.
 - **Geriye dönük kontrol:** 15, 30, 45 ve 60 dakika önce sistem hangi sinyali veriyordu, o an long ya da short açsaydın
   şu anki fiyatla komisyon dahil ne durumda olurdun.
 
 - **Komisyon sonrası net kazanç:** Her kural işlem gibi hesaplanır (giriş: sinyal mumu kapanışı, çıkış: hedefin bittiği mum).
-  Maliyet vadeli için işlem başı %0,14, spot için %0,24 (komisyon + kayma). Test döneminde komisyondan sonra **zarar ettiren kural gösterilmez**.
+  Maliyet vadeli için işlem başı %0,14, spot için %0,24 (komisyon + kayma); vadelide pozisyonun açık kaldığı her 8 saat için
+  funding (%0,01) da eklenir. Test döneminde komisyondan sonra zarar ettiren kural **"KOMİSYONA YENİLİYOR"** diye işaretlenir
+  (ayarlarda `"net_zararli_kurallari_ele": true` ile tamamen gizlenir).
   Kartlarda ortalama net, kâr faktörü ve son 20 oluşumdaki isabet yazar; düşüşteyse **ZAYIFLIYOR** rozeti çıkar.
 - **Kasa simülasyonu:** "Test döneminde bu sinyallere uysaydım 1.000$ ne olurdu?" Bakiye eğrisi, en kötü düşüş, aynı dönemde al-tut kıyası.
   Kurallar bu dönem de dahil seçildiği için iyimserdir.
@@ -126,6 +131,12 @@ Veri kronolojik olarak üçe bölünür: **%60 eğitim** (kurallar burada aranı
   son dilimde ölçülür.
 - Saf rastgele fiyat verisiyle yapılan testte sistem **sıfır** kural buldu. Yani geleceğe bakış (sızıntı) yok ve
   rastgelelikten "sahte formasyon" üretmiyor.
+- **Dürüst uyarı:** kurallar yine de "testte tutanlar" diye seçildiği için test oranları bir miktar iyimserdir. Bunun ölçüsü
+  `python -m btc_tahmin sahte` komutudur: hedefler koşullara göre tam gün kaydırılır ve madencilik tekrarlanır; karışık veride
+  çıkan kural sayısı, gerçek listede kaç kuralın şans olabileceğini gösterir. Asıl hakem canlı karnedir: 100+ sonuçlanmış
+  sinyalden sonra canlı isabet ile beklenen arasındaki fark Veri durumu panelinde izlenir, 10 puanı aşarsa uyarı verir.
+- **Veri bütünlüğü:** mum serisindeki boşluklar (Binance bakımı, indirme kesintisi) Veri durumu panelinde raporlanır;
+  boşluk anlarında indikatörler bozulabilir.
 
 > Gerçekçi beklenti: tek bir 15m mumun yönü büyük ölçüde gürültüdür. Sistem çoğu zaman **"tutarlı sinyal yok"** der.
 > Bu bir hata değildir. %80-90 tutarlılık ancak nadir oluşan koşullarda görülür. `Test n` küçükse temkinli ol.
@@ -149,7 +160,9 @@ tutarlılık seviyeleri (%90/85/80/75/70), gün sonu saat dilimi (TSİ).
 ## Test (ağ gerektirmez)
 
 ```bash
-python -m tests.sentetik_test   # uçtan uca çalışıyor mu?
-python -m tests.sizinti_test    # 540 günlük rastgele veride sahte sinyal çıkıyor mu? (0 olmalı)
-python -m tests.karne_test      # canlı karne sinyalleri doğru sonuçlandırıyor mu?
+pip install -r requirements-dev.txt
+python -m pytest -q tests/test_birim.py   # birim testleri (saniyeler)
+python -m pytest -q                       # hepsi: uçtan uca, sızıntı (rastgele veride 0 kural), karne (~2 dk)
 ```
+
+Her push ve PR'da GitHub Actions aynı testleri Python 3.11 ve 3.12 ile çalıştırır (`.github/workflows/test.yml`).

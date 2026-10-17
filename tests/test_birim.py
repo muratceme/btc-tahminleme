@@ -1,0 +1,169 @@
+"""Birim testleri (ağ gerektirmez, saniyeler içinde biter):  python -m pytest -q"""
+from datetime import datetime, timezone
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from btc_tahmin import config, ekveri, gunluk, miner, performans, saglik, sinyal
+from btc_tahmin.aciklama import hedef_metni, kosul_bilgisi
+
+
+# ------------------------------------------------------------------ miner
+def test_wilson_alt_az_ornek_daha_dusuk():
+    assert miner.wilson_alt(17, 20) < miner.wilson_alt(170, 200) < 0.85
+    assert miner.wilson_alt(0, 0) == 0.0
+
+
+def test_binom_p_sinirlar():
+    assert miner.binom_p(0, 0, 0.5) == 1.0
+    assert miner.binom_p(90, 100, 0.5) < 1e-6
+    assert 0.4 < miner.binom_p(50, 100, 0.5) < 0.6
+
+
+def test_aile_ince_kosul_ayni_aile():
+    assert miner.aile("RSI~:35..40") == miner.aile("RSI:30-45") == "RSI"
+
+
+def test_ayristir_gun_ve_blok():
+    idx = np.array([0, 1, 2, 10, 11, 30])
+    gun = np.array([0] * 5 + [1] * 10 + [2] * 20)
+    assert miner.ayristir(idx, gun=gun).tolist() == [0, 10, 30]
+    assert miner.ayristir(idx, blok=3).tolist() == [0, 10, 30]
+    assert miner.ayristir(np.array([], dtype=int), blok=3).tolist() == []
+
+
+def test_kural_id_sira_bagimsiz():
+    assert miner.kural_id("h", 1, ["A:x", "B:y"]) == miner.kural_id("h", 1, ["B:y", "A:x"])
+
+
+# ------------------------------------------------------------------ sinyal
+def test_agirlik_wilson():
+    assert sinyal.agirlik(0.85, 0) == 0.0
+    assert 0 < sinyal.agirlik(0.85, 20) < sinyal.agirlik(0.85, 200) < 0.35
+    assert sinyal.agirlik(0.55, 20) == 0.0    # alt sınır %50'nin altında: söz hakkı yok
+
+
+def test_ufuk():
+    assert sinyal.ufuk("gun_sonu") == "gun_sonu"
+    for h in ("sonraki_mum", "sonraki_yesil", "ileri_3", "seri_2_kirmizi"):
+        assert sinyal.ufuk(h) == "kisa"
+
+
+def test_karar_bekle_ve_yon():
+    assert sinyal.karar([])["sinyal"] == "BEKLE"
+    oy = lambda yon, w: {"yon": yon, "agirlik": w, "tutarlilik": 0.5 + w, "n": 50, "aciklama": "x"}
+    assert sinyal.karar([oy("LONG", 0.3), oy("SHORT", 0.28)])["sinyal"] == "BEKLE"
+    k = sinyal.karar([oy("LONG", 0.3), oy("SHORT", 0.1)])
+    assert k["sinyal"] == "LONG" and k["long_oy"] == 1 and k["short_oy"] == 1 and k["guc"] == 0.5
+    assert sinyal.karar([oy("LONG", 0.0)])["sinyal"] == "BEKLE"
+
+
+def _kt(**kosullar):
+    return pd.DataFrame({k: [v] for k, v in kosullar.items()})
+
+
+def test_oylar_ufuk_ayrimi_ve_emekli():
+    KT = _kt(**{"A:x": True, "B:y": True})
+    kurallar = {"sonraki_mum": [{"hedef": "sonraki_mum", "yon": "YESIL/YUKARI", "tutarlilik": 0.8, "test_n": 50, "kosullar": ["A:x"]}],
+                "gun_sonu": [{"hedef": "gun_sonu", "yon": "KIRMIZI/ASAGI", "tutarlilik": 0.8, "test_n": 50, "kosullar": ["B:y"]},
+                             {"hedef": "gun_sonu", "yon": "KIRMIZI/ASAGI", "tutarlilik": 0.9, "test_n": 50, "kosullar": ["B:y"], "emekli": True}]}
+    kisa = sinyal.oylar(0, KT, kurallar, [], "15m", 0, "kisa")
+    gs = sinyal.oylar(0, KT, kurallar, [], "15m", 0, "gun_sonu")
+    assert [o["yon"] for o in kisa] == ["LONG"]
+    assert [o["yon"] for o in gs] == ["SHORT"]
+
+
+def test_oylar_model_esik():
+    KT = _kt(**{"A:x": False})
+    yon = [{"tur": "HAM", "model": "GB (sonraki_yesil)", "hedef": "sonraki_yesil", "p_gecmis": [0.5, 0.9]},
+           {"tur": "YON", "model": "GB (sonraki_yesil)", "hedef": "sonraki_yesil", "tutarlilik": 0.8, "test_n": 40, "guven_marji": 0.2}]
+    assert [o["yon"] for o in sinyal.oylar(0, KT, {}, yon, "15m", 0, "kisa")] == ["LONG"]
+    assert sinyal.oylar(0, KT, {}, yon, "15m", 1, "kisa") == []      # bir mum önce p=0.5: eşik altı
+    assert sinyal.oylar(0, KT, {}, yon, "15m", 0, "gun_sonu") == []  # farklı ufuk
+
+
+# ------------------------------------------------------------------ gunluk
+def test_cikis_zamani():
+    t = pd.Timestamp("2026-01-10 12:00", tz="UTC")
+    sure = pd.Timedelta("15min")
+    assert gunluk._cikis_zamani("sonraki_mum", t, sure) == t + sure
+    assert gunluk._cikis_zamani("ileri_4", t, sure) == t + 4 * sure
+    # TSİ gün sonu 23:59 = 20:45 UTC açılışlı son mum
+    assert gunluk._cikis_zamani("gun_sonu", t, sure) == pd.Timestamp("2026-01-10 20:45", tz="UTC")
+    # 20:45 UTC mumu (TSİ 23:45-24:00) günün son mumu: çıkış kendisi
+    assert gunluk._cikis_zamani("gun_sonu", pd.Timestamp("2026-01-10 20:45", tz="UTC"), sure) == pd.Timestamp("2026-01-10 20:45", tz="UTC")
+
+
+def test_tur_adi():
+    assert gunluk._tur_adi("ileri_3") == "3 mum sonra"
+    assert gunluk._tur_adi("seri_2_yesil").startswith("Sonraki 2 mum")
+
+
+# ------------------------------------------------------------------ performans
+def test_istatistik_ve_funding():
+    ol = {"idx": np.arange(4), "bolum": np.array([0, 2, 2, 2]), "isabet": np.array([1, 1, 0, 1]),
+          "net": np.array([0.5, 0.3, -0.2, 0.1])}
+    t = performans.istatistik(ol, 2)
+    assert t["islem"] == 3 and t["net_kazanma_orani"] == pytest.approx(2 / 3, abs=1e-3) and t["kar_faktoru"] == 2.0
+    assert performans.istatistik(ol, 1) == {"islem": 0}
+    f = performans.funding_maliyeti(np.array([0.25, 7.9, 8.0, 24.0]))
+    beklenen = np.array([0, 0, 1, 3]) * config.FUNDING_8S_YUZDE
+    assert np.allclose(f, beklenen)
+
+
+# ------------------------------------------------------------------ ekveri ayrıştırıcılar
+def test_takvim_ayristir():
+    liste = [{"country": "USD", "impact": "High", "title": "CPI", "date": "2026-02-11T08:30:00-05:00", "forecast": "3%", "previous": "2.9%"},
+             {"country": "EUR", "impact": "High", "title": "x", "date": "2026-02-11T08:30:00-05:00"},
+             {"country": "USD", "impact": "Low", "title": "y", "date": "2026-02-11T08:30:00-05:00"},
+             {"country": "USD", "impact": "Medium", "title": "z", "date": "bozuk"}]
+    out = ekveri.takvim_ayristir(liste)
+    assert len(out) == 1 and out[0]["tarih"] == "2026-02-11T13:30:00Z" and out[0]["etki"] == "yuksek"
+
+
+def test_opsiyon_ayristir_max_pain():
+    simdi = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    def enst(vade, strike, tip, oi):
+        return {"instrument_name": f"BTC-{vade}-{strike}-{tip}", "open_interest": oi, "underlying_price": 70000}
+    liste = [enst("27MAR26", 60000, "C", 100), enst("27MAR26", 80000, "P", 100), enst("27MAR26", 70000, "C", 10),
+             enst("27MAR26", 70000, "P", 10), enst("27FEB26", 50000, "C", 999)]   # geçmiş vade atlanır
+    o = ekveri.opsiyon_ayristir(liste, simdi)
+    assert o["max_pain"] == 70000.0 and o["put_call_orani"] == 1.0 and o["vade"].startswith("2026-03-27")
+    with pytest.raises(RuntimeError):
+        ekveri.opsiyon_ayristir([], simdi)
+
+
+def test_etf_ayristir():
+    sayfa = ("<table><tr><th>Date</th><th>IBIT</th><th>Total</th></tr>"
+             "<tr><td>01 Oct 2025</td><td>10.0</td><td>(123.4)</td></tr>"
+             "<tr><td>02 Oct 2025</td><td>10.0</td><td>1,050.0</td></tr>"
+             "<tr><td>Total</td><td>-</td><td>900</td></tr></table>")
+    out = ekveri.etf_ayristir(sayfa)
+    assert [g["net_milyon_usd"] for g in out] == [-123.4, 1050.0]
+    assert out[0]["tarih"] == "2025-10-01"
+
+
+def test_likidasyon_tahmini():
+    assert ekveri.likidasyon_tahmini(-3.0, -1.5).startswith("Olası LONG")
+    assert ekveri.likidasyon_tahmini(-3.0, 1.5).startswith("Olası SHORT")
+    assert ekveri.likidasyon_tahmini(-1.0, -1.5) is None and ekveri.likidasyon_tahmini(None, 1) is None
+
+
+# ------------------------------------------------------------------ aciklama
+def test_hedef_metni_yon():
+    assert hedef_metni("sonraki_mum", 1, "15m")[0] is True
+    assert hedef_metni("seri_2_kirmizi", 1, "15m")[0] is False
+    assert hedef_metni("gun_sonu", 0, "15m")[0] is False
+
+
+def test_kosul_bilgisi_bilinmeyen_kosul_patlamaz():
+    b = kosul_bilgisi("YENI_AILE:durum")
+    assert b["etiket"] and "grup" in b
+
+
+# ------------------------------------------------------------------ saglik
+def test_saglik_bos_rapor():
+    satirlar = saglik.kontrol({"baglam": {}, "coinler": {}, "karne": {}, "genel_puan": {}})
+    assert any(x["durum"] == "hata" for x in satirlar)
+    assert set(saglik.ozet(satirlar)) == {"ok", "normal", "hata"}

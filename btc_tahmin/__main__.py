@@ -9,6 +9,7 @@
     python -m btc_tahmin kontrol          # her metrik geldi mi? (son rapora göre)
     python -m btc_tahmin telegram         # telefona bildirim kurulumu (adım adım)
     python -m btc_tahmin karne            # canlı karne: sistemin gerçek sinyal performansı
+    python -m btc_tahmin sahte --tekrar 5 # sahte keşif testi: bulunan kuralların kaçı şans olabilir?
     python -m btc_tahmin kontrol --kaynaklar  # dış kaynakları (dominans, F&G, vadeli, haber) şimdi tekrar dene
 """
 from __future__ import annotations
@@ -57,6 +58,11 @@ def main(argv=None):
             a.add_argument("--tunel", action="store_true",
                            help="cloudflared ile her yerden erişilebilen https adresi aç (şifre otomatik konur)")
     alt.add_parser("ozet")
+    sh = alt.add_parser("sahte", help="sahte keşif testi: kuralların kaçı şans eseri olabilir?")
+    sh.add_argument("--aralik", default=config.VARSAYILAN_ARALIK, choices=config.ARALIKLAR)
+    sh.add_argument("--coin", nargs="*", help="ör. --coin BTC (varsayılan: hepsi)")
+    sh.add_argument("--tekrar", type=int, default=5, help="kaç karışık tur (her tur coin başına ~1-3 dk)")
+    sh.add_argument("--derinsiz", action="store_true", help="derin taramayı atla (çok daha hızlı)")
     alt.add_parser("telegram")
     alt.add_parser("karne")
     k = alt.add_parser("kontrol")
@@ -83,6 +89,17 @@ def main(argv=None):
             print("Dış kaynaklar tekrar deneniyor (dominans, korku/açgözlülük, vadeli, haberler) ...", flush=True)
             r["baglam"] = market.baglam_topla(config.SEMBOLLER)
         print(report.saglik_tablosu(saglik.kontrol(r)))
+        return
+    if args.komut == "sahte":
+        from . import data, sahte
+        semboller = [c.upper() if c.upper().endswith("USDT") else c.upper() + "USDT" for c in args.coin] if args.coin else config.SEMBOLLER
+        print("Veri hazırlanıyor ...", flush=True)
+        mumlar = {s_: data.mumlari_getir(s_, args.aralik) for s_ in config.SEMBOLLER}
+        for s_ in semboller:
+            print(f"{s_}: {args.tekrar} karışık tur başlıyor ...", flush=True)
+            sonuc = sahte.calistir_ve_kaydet(s_, args.aralik, mumlar, tekrar=args.tekrar, derin=not args.derinsiz)
+            print(sahte.metin(sonuc, s_))
+        print("Sonuç kaydedildi; bir sonraki raporda 'Veri durumu' panelinde görünür.")
         return
     if args.komut == "ozet":
         print(report.terminal(report.json_oku()))

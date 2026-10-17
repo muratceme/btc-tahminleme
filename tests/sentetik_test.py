@@ -43,5 +43,9 @@ def main():
     print(f"OK ({time.time() - t0:.0f} sn)")
 
 
+def test_sentetik_uctan_uca():
+    main()
+
+
 if __name__ == "__main__":
     main()

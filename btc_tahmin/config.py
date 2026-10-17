@@ -102,6 +102,9 @@ SEMBOLLER = [x.upper() for x in KULLANICI.get("semboller", SEMBOLLER)]
 # vadeli: taker %0,05 x 2 + kayma ~%0,04 = %0,14 · spot: %0,10 x 2 + kayma ~%0,04 = %0,24
 ISLEM_TURU = KULLANICI.get("islem_turu", "vadeli")
 ISLEM_MALIYETI_YUZDE = {"vadeli": 0.14, "spot": 0.24, **KULLANICI.get("islem_maliyeti_yuzde", {})}
+# Vadeli işlemde pozisyon açık kaldığı her 8 saat için ödenen funding (varsayılan oran %0,01). Uzun süreli (gün sonu, 8 mum)
+# hedeflerde net kazanca maliyet olarak eklenir; spotta yoktur.
+FUNDING_8S_YUZDE = float(KULLANICI.get("funding_8s_yuzde", 0.01)) if ISLEM_TURU == "vadeli" else 0.0
 # Komisyon sonrası test döneminde zarar ettiren kurallar: False = gösterilir ama "KOMİSYONA YENİLİYOR" diye işaretlenir,
 # True = hiç gösterilmez. 15m gibi kısa mumlarda hareketler küçük olduğu için True çoğu kuralı siler.
 NET_ZARARLI_KURALLARI_ELE = bool(KULLANICI.get("net_zararli_kurallari_ele", False))

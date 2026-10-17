@@ -47,5 +47,9 @@ def main():
     print("OK - sızıntı yok")
 
 
+def test_sizinti_yok():
+    main()
+
+
 if __name__ == "__main__":
     main()

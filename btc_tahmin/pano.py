@@ -1,166 +1,21 @@
-"""HTML panosu (rapor.html) ve açıklama sayfası (nasil-calisir.html).
+"""HTML panosu (rapor.html), açıklama sayfası (nasil-calisir.html) ve grafik sayfası (grafik.html).
 
-Tek dosyalık, internet gerektirmeyen sayfalar üretir (yalnızca yazı tipleri Google Fonts'tan gelir,
-internet yoksa sistem yazı tipine düşer).
+İnternet gerektirmeyen sayfalar üretir (yalnızca yazı tipleri Google Fonts'tan gelir, internet yoksa sistem
+yazı tipine düşer). Stil ve betikler btc_tahmin/statik/ altındadır ve rapor klasörüne kopyalanır.
 """
 from __future__ import annotations
 
 import html
 import math
+import re
 
 from . import config
 from .market import DOM_COINLER
 from .sinyal import KARARSIZLIK_ESIGI
 from .aciklama import AILELER, FORMASYONLAR, GRUP_SIRASI, hedef_metni, kosul_bilgisi
 
-CSS = """
-:root{--bg:#05070b;--panel:#0c1119;--panel2:#101722;--cizgi:rgba(148,163,184,.13);--cizgi2:rgba(148,163,184,.22);
---yazi:#e7eaf0;--soluk:#8b97a9;--soluk2:#5e6a7b;--altin:#d4af37;--altin2:#f3d778;--iyi:#16c784;--kotu:#ea3943;
---orta:#f0b90b;--mavi:#4f8cff;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
---sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-*{box-sizing:border-box}html,body{max-width:100%;overflow-x:hidden}
-body{margin:0;background:var(--bg);background-image:radial-gradient(1200px 500px at 15% -10%,rgba(212,175,55,.07),transparent 60%),
-radial-gradient(900px 400px at 100% 0,rgba(79,140,255,.05),transparent 60%);color:var(--yazi);font:14px/1.55 var(--sans);
--webkit-font-smoothing:antialiased}
-a{color:var(--altin2);text-decoration:none}a:hover{text-decoration:underline}
-.mono,.sayi{font-family:var(--mono);font-variant-numeric:tabular-nums}
-.iyi{color:var(--iyi)}.kotu{color:var(--kotu)}.orta{color:var(--orta)}.notr{color:var(--soluk)}.altin{color:var(--altin2)}
-.kucuk{color:var(--soluk);font-size:12px}.cok-kucuk{color:var(--soluk2);font-size:11px}
-/* üst bar */
-.ust-bar{position:sticky;top:0;z-index:20;background:rgba(3,4,7,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--cizgi2)}
-.ust-ic{max-width:1360px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:10px 22px;flex-wrap:wrap}
-.marka{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.14em;font-size:13px;white-space:nowrap}
-.marka .elmas{width:22px;height:22px;transform:rotate(45deg);background:linear-gradient(135deg,var(--altin2),var(--altin) 55%,#8a6d17);
-border-radius:3px;box-shadow:0 0 18px rgba(212,175,55,.35)}
-.marka small{font-size:9px;letter-spacing:.2em;color:#000;background:var(--altin);padding:1px 5px;border-radius:2px;margin-left:2px}
-nav.menu{display:flex;gap:4px}nav.menu a{color:var(--soluk);padding:6px 10px;border-radius:6px;font-weight:600;font-size:13px}
-nav.menu a.aktif,nav.menu a:hover{color:var(--yazi);background:rgba(255,255,255,.06);text-decoration:none}
-.canli{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:12px;color:var(--soluk);flex-wrap:wrap}
-.nokta{display:inline-flex;align-items:center;gap:6px;color:var(--iyi);font-weight:700;letter-spacing:.12em;font-size:11px}
-.nokta i{width:8px;height:8px;border-radius:50%;background:var(--iyi);box-shadow:0 0 0 0 rgba(22,199,132,.6);animation:nabiz 2s infinite}
-.nokta.eski{color:var(--orta)}.nokta.eski i{background:var(--orta);animation:none}
-@keyframes nabiz{0%{box-shadow:0 0 0 0 rgba(22,199,132,.55)}70%{box-shadow:0 0 0 9px rgba(22,199,132,0)}100%{box-shadow:0 0 0 0 rgba(22,199,132,0)}}
-/* kayan şerit */
-.serit{border-top:1px solid var(--cizgi);overflow:hidden;white-space:nowrap;background:#030406}
-.serit-ic{display:inline-flex;gap:34px;padding:7px 0;animation:kay 60s linear infinite;font-family:var(--mono);font-size:12px}
-.serit:hover .serit-ic{animation-play-state:paused}.serit-ic span{color:var(--soluk)}.serit-ic b{color:var(--yazi);margin-right:6px}
-@keyframes kay{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-@media (prefers-reduced-motion:reduce){.serit-ic{animation:none}.nokta i{animation:none}.serit{overflow-x:auto}}
-main{max-width:1360px;margin:0 auto;padding:20px 16px 40px}
-/* kartlar */
-.kart{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--cizgi);border-radius:12px;padding:18px;
-box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 10px 30px rgba(0,0,0,.35);min-width:0}
-.kart-baslik{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;font-size:11px;font-weight:700;
-letter-spacing:.14em;text-transform:uppercase;color:var(--soluk)}
-.kart-baslik .bilgi{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1px solid var(--cizgi2);
-color:var(--soluk);font-size:11px;letter-spacing:0;text-decoration:none}.kart-baslik .bilgi:hover{color:var(--altin2);border-color:var(--altin)}
-.izgara-4{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:16px;margin-bottom:16px}
-.dev{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:44px;font-weight:700;line-height:1;letter-spacing:-.02em}
-ul.liste{list-style:none;margin:10px 0 0;padding:0}ul.liste li{display:flex;gap:10px;justify-content:space-between;padding:6px 0;
-border-top:1px solid var(--cizgi);font-size:13px}ul.liste li:first-child{border-top:0}
-.etiket-sag{font-family:var(--mono);white-space:nowrap}
-table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid var(--cizgi);text-align:left;vertical-align:top}
-th{position:sticky;top:0;background:var(--panel);color:var(--soluk2);font-weight:700;font-size:10px;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
-td.sayi,th.sayi{text-align:right}tbody tr:hover{background:rgba(255,255,255,.025)}.tablo-sar{overflow-x:auto;margin:0 -4px}
-.rozet{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.04em;
-white-space:nowrap;border:1px solid currentColor;background:color-mix(in srgb,currentColor 12%,transparent)}
-.cip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;margin:3px 4px 3px 0;border-radius:6px;font-size:12px;
-background:rgba(255,255,255,.04);border:1px solid var(--cizgi);max-width:100%;overflow-wrap:anywhere;cursor:help}
-.cip::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--soluk2);flex:none}
-.cip.boga::before{background:var(--iyi)}.cip.ayi::before{background:var(--kotu)}.cip.asiri::before{background:var(--orta)}
-/* coin sekmeleri */
-.sekmeler{display:flex;gap:6px;margin:6px 0 16px;flex-wrap:wrap}
-.sekme{font:600 13px var(--sans);color:var(--soluk);background:var(--panel);border:1px solid var(--cizgi);border-radius:10px;padding:9px 14px;
-cursor:pointer;display:flex;gap:10px;align-items:center}.sekme b{color:var(--yazi);font-weight:800;letter-spacing:.06em}
-.sekme[aria-selected=true]{border-color:var(--altin);box-shadow:0 0 0 1px var(--altin) inset;background:linear-gradient(180deg,rgba(212,175,55,.10),transparent)}
-.js .coin[hidden]{display:none}
-/* hero */
-.hero{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:16px;margin-bottom:16px}
-@media (max-width:1000px){.hero{grid-template-columns:1fr 1fr}.hero .karar-kart{grid-column:1/-1}}
-@media (max-width:640px){.hero{grid-template-columns:1fr}}
-.fiyat{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:38px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
-.degisim{font-family:var(--mono);font-size:14px;font-weight:700;padding:3px 8px;border-radius:6px;margin-left:8px;vertical-align:middle}
-.degisim.iyi{background:rgba(22,199,132,.12)}.degisim.kotu{background:rgba(234,57,67,.12)}
-.sembol{font-size:13px;font-weight:800;letter-spacing:.16em;color:var(--altin2)}
-.gosterge{display:flex;flex-direction:column;align-items:center}.gosterge svg{width:100%;max-width:260px;height:auto}
-.karar{font-size:12px;font-weight:800;letter-spacing:.12em;padding:6px 12px;border-radius:8px;margin-top:6px;text-align:center}
-.karar.iyi{background:rgba(22,199,132,.12);border:1px solid rgba(22,199,132,.4)}
-.karar.orta{background:rgba(240,185,11,.10);border:1px solid rgba(240,185,11,.4)}
-.karar.kotu{background:rgba(234,57,67,.12);border:1px solid rgba(234,57,67,.4)}
-.karar.notr{background:rgba(255,255,255,.04);border:1px solid var(--cizgi2);color:var(--soluk)}
-.kpi-izgara{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.kpi{background:rgba(255,255,255,.025);border:1px solid var(--cizgi);border-radius:10px;padding:10px 12px;min-width:0}
-.kpi .e{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--soluk2)}
-.kpi .d{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:20px;font-weight:700;margin-top:2px}
-.kpi .a{font-size:11px;color:var(--soluk)}
-.aciklama-kutu{border-left:3px solid var(--altin);background:rgba(212,175,55,.06);padding:12px 14px;border-radius:0 8px 8px 0;margin:0 0 16px;font-size:13.5px}
-.aciklama-kutu b{color:var(--altin2)}
-.iki-sutun{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px}@media (max-width:1000px){.iki-sutun{grid-template-columns:1fr}}
-.bolum{margin-bottom:16px}
-/* risk satırı */
-.tut{display:flex;align-items:center;gap:8px;white-space:nowrap}.tut .cubuk{width:64px;height:6px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden}
-.tut .cubuk span{display:block;height:100%;background:linear-gradient(90deg,var(--altin),var(--altin2))}
-tr.pasif td{opacity:.5}.satir-not{color:var(--soluk);font-size:12px;margin-top:4px;line-height:1.45}
-.etk-hucre{font-family:var(--mono);font-weight:700;color:var(--altin2);white-space:nowrap}
-/* sinyal haritası */
-.denge{display:flex;height:8px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,.06);margin:6px 0 4px}
-.denge .b{background:var(--iyi)}.denge .a{background:var(--kotu)}.denge .x{background:var(--orta)}
-.grup{margin-top:12px;break-inside:avoid}.saglik summary::-webkit-details-marker{display:none}.grup h4{margin:0 0 4px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--soluk2)}
-/* kurallar */
-.kural{border:1px solid var(--cizgi);border-radius:10px;padding:12px;margin-bottom:10px;background:rgba(255,255,255,.015)}
-.kural-ust{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
-.kural-yuzde{font-family:var(--mono);font-size:20px;font-weight:800}
-.grafik-btn{margin-left:auto;font-size:12px;font-weight:700;color:var(--altin2);border:1px solid rgba(212,175,55,.45);border-radius:8px;
-padding:4px 10px;background:rgba(212,175,55,.07);white-space:nowrap}.grafik-btn:hover{background:rgba(212,175,55,.16);text-decoration:none}
-.yon-izgara{display:grid;grid-template-columns:1fr 1.7fr;gap:16px;margin-bottom:16px}@media (max-width:1100px){.yon-izgara{grid-template-columns:1fr}}
-.net-satir{margin-top:6px;font-size:12px;color:var(--soluk);border-top:1px dashed var(--cizgi);padding-top:6px}
-.derin-kart{border-color:rgba(212,175,55,.35);box-shadow:0 0 0 1px rgba(212,175,55,.12) inset,0 10px 30px rgba(0,0,0,.35)}
-.grafik-kutu{height:520px;margin-top:10px}.grafik-kucuk{height:200px;margin-top:10px}@media (max-width:640px){.grafik-kutu{height:380px}}
-.kpi-4{grid-template-columns:repeat(auto-fit,minmax(min(150px,45%),1fr))}.kpi-4 .dev{font-size:clamp(20px,5vw,30px)!important}
-.filtre{display:flex;gap:6px;flex-wrap:wrap}.filtre button{font:600 12px var(--sans);color:var(--soluk);background:var(--panel);border:1px solid var(--cizgi);
-border-radius:8px;padding:6px 10px;cursor:pointer}.filtre button[aria-pressed=true]{color:var(--yazi);border-color:var(--altin)}
-tr.tik{cursor:pointer}tr.secili td{background:rgba(212,175,55,.08)}
-details{margin-top:12px}summary{cursor:pointer;color:var(--altin2);font-weight:600;font-size:13px}
-ul.liste.haber li{align-items:flex-start;justify-content:flex-start}.haber .skor{font-family:var(--mono);font-weight:700;min-width:30px}
-footer{max-width:1360px;margin:0 auto;padding:24px 16px 40px;color:var(--soluk2);font-size:12px;border-top:1px solid var(--cizgi)}
-/* nasıl çalışır */
-.doc{display:grid;grid-template-columns:240px 1fr;gap:28px;align-items:start}
-@media (max-width:900px){.doc{grid-template-columns:1fr}.toc{position:static!important}}
-.toc{position:sticky;top:76px;font-size:13px}.toc a{display:block;color:var(--soluk);padding:5px 10px;border-left:2px solid var(--cizgi)}
-.toc a:hover{color:var(--yazi);border-color:var(--altin);text-decoration:none}
-.doc h1{font-size:30px;margin:0 0 6px;letter-spacing:-.01em}.doc h2{font-size:20px;margin:0 0 10px;color:var(--altin2)}
-.doc section{scroll-margin-top:80px}.doc p{color:#c9d0db;max-width:78ch}.doc .kart{margin-bottom:18px}
-.akis{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;margin:14px 0}
-.akis .adim{flex:1 1 150px;border:1px solid var(--cizgi2);border-radius:10px;padding:12px;background:rgba(255,255,255,.025)}
-.akis .adim b{display:block;color:var(--altin2);font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px}
-.akis .ok{align-self:center;color:var(--altin);font-size:18px}@media (max-width:640px){.akis .ok{transform:rotate(90deg);width:100%;text-align:center}}
-.bolme{display:flex;height:34px;border-radius:8px;overflow:hidden;font-size:12px;font-weight:700;margin:10px 0}
-.bolme div{display:grid;place-items:center;color:#05070b}
-.ornek{font-family:var(--mono);background:#06090e;border:1px solid var(--cizgi);border-radius:8px;padding:12px 14px;font-size:12.5px;overflow-x:auto;white-space:pre}
-"""
-
-JS = """
-document.documentElement.classList.add('js');
-(function(){
-  var sek=document.querySelectorAll('.sekme'),coin=document.querySelectorAll('.coin');
-  function sec(id){sek.forEach(function(s){s.setAttribute('aria-selected',s.dataset.hedef===id)});
-    coin.forEach(function(c){c.hidden=c.id!==id});try{localStorage.setItem('kr_sekme',id)}catch(e){}}
-  sek.forEach(function(s){s.addEventListener('click',function(){sec(s.dataset.hedef)})});
-  var ilk=null;try{ilk=localStorage.getItem('kr_sekme')}catch(e){}
-  if(sek.length){sec(ilk&&document.getElementById(ilk)?ilk:sek[0].dataset.hedef)}
-  var ts=document.body.dataset.ts?new Date(document.body.dataset.ts):null,yas=document.getElementById('yas'),
-      saat=document.getElementById('saat'),nokta=document.getElementById('nokta');
-  function tik(){var n=new Date();
-    if(saat){saat.textContent=n.toLocaleTimeString('tr-TR',{timeZone:'Europe/Istanbul',hour:'2-digit',minute:'2-digit',second:'2-digit'})+' TSİ'}
-    if(ts&&yas){var dk=Math.max(0,Math.round((n-ts)/60000));yas.textContent=dk<1?'az önce':dk+' dk önce';
-      if(nokta){nokta.classList.toggle('eski',dk>30);nokta.lastChild.textContent=dk>30?' ESKİ VERİ':' CANLI'}}}
-  tik();setInterval(tik,1000);
-  var y=parseInt(document.body.dataset.yenile||'0',10);
-  if(y>0){try{var sy=sessionStorage.getItem('kr_scroll');if(sy){window.scrollTo(0,+sy);sessionStorage.removeItem('kr_scroll')}}catch(e){}
-    setTimeout(function(){try{sessionStorage.setItem('kr_scroll',window.scrollY)}catch(e){}location.reload()},y*1000)}
-})();
-"""
-
+# Stil ve betikler statik/ klasöründe (pano.css, pano.js, grafik.js); sürüm damgası tarayıcı önbelleğini kırar
+_SV = re.sub(r"\W+", "", config.SURUM)[:12] or "0"
 FONT = ('<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
         '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">')
 
@@ -495,8 +350,29 @@ def _coin(c: dict, kirim: dict) -> str:
 <div class="kart bolum">{_baslik('Teknik özet')}<div class="kpi-izgara" style="grid-template-columns:repeat(auto-fill,minmax(min(140px,45%),1fr))">{tek_html}</div>
   <details><summary>Kural kütüphanesi · sonraki mum ({c['kural_sayisi']['sonraki_mum']} kural, en iyi 20)</summary><div style="margin-top:10px">{kut(c['kural_kutuphanesi']['sonraki_mum'])}</div></details>
   <details><summary>Kural kütüphanesi · gün sonu ({c['kural_sayisi']['gun_sonu']} kural, en iyi 20)</summary><div style="margin-top:10px">{kut(c['kural_kutuphanesi']['gun_sonu'])}</div></details>
+  {_sahte_kesif_satiri(c)}
 </div>
 </section>"""
+
+
+def _sahte_kesif_satiri(c: dict) -> str:
+    sk = c.get("sahte_kesif")
+    ks = c.get("kural_sayisi") or {}
+    if not sk:
+        return ('<p class="cok-kucuk" style="margin-top:10px">🎲 <b>Sahte keşif testi</b> henüz çalıştırılmadı. Bulunan kuralların kaçının şans eseri '
+                'olabileceğini ölçer: <span class="mono">python -m btc_tahmin sahte</span></p>')
+    hucre = []
+    for k, ort in sk["ortalama"].items():
+        g = (sk.get("gercek") or {}).get(k, ks.get(k, 0))
+        pay = f"~%{min(100, 100 * ort / g):.0f}" if g else "—"
+        hucre.append(f"<tr><td>{_e(k)}</td><td class='sayi mono'>{g}</td><td class='sayi mono'>{ort:.1f}</td>"
+                     f"<td class='sayi mono'>{sk['maks'][k]}</td><td class='sayi mono'><b>{pay}</b></td></tr>")
+    return (f'<details style="margin-top:10px"><summary>🎲 Sahte keşif testi · {sk["tekrar"]} karışık tur ({_e(sk["zaman"][:10])})</summary>'
+            f'<div class="tablo-sar" style="margin-top:8px"><table><thead><tr><th>Liste</th><th class="sayi">Gerçek</th>'
+            f'<th class="sayi">Karışık ort.</th><th class="sayi">Karışık maks</th><th class="sayi">Şans payı</th></tr></thead>'
+            f'<tbody>{"".join(hucre)}</tbody></table></div>'
+            '<p class="cok-kucuk">Hedefler koşullara göre tam gün kaydırılıp madencilik tekrarlandı. Karışık veride çıkan kural sayısı, '
+            "gerçek listede kaç kuralın şans olabileceğinin tahminidir. Şans payı %50'yi aşıyorsa o listeye güvenme.</p></details>")
 
 
 def _yon_rozeti(sinyal: str, buyuk: bool = False) -> str:
@@ -511,24 +387,32 @@ def _yuzde(v) -> str:
     return f'<span class="{"iyi" if v > 0 else "kotu"}">{v:+.2f}%</span>'
 
 
+def _ufuk_blogu(ad: str, sm: dict, aciklama: str) -> str:
+    toplam = (sm.get("long_oy", 0) + sm.get("short_oy", 0)) or 1
+    dayanak = "".join(f'<li><span>{_e(d)}</span></li>' for d in sm.get("dayanak", []))
+    return (f'<div style="margin-top:14px"><div class="cok-kucuk" style="letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">{_e(ad)} · <span style="text-transform:none;letter-spacing:0">{_e(aciklama)}</span></div>'
+            f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">{_yon_rozeti(sm.get("sinyal", "BEKLE"), True)}'
+            f'<div class="kucuk">güç <b class="mono">%{sm.get("guc", 0) * 100:.0f}</b> · '
+            f'<span class="iyi">{sm.get("long_oy", 0)} long</span> / <span class="kotu">{sm.get("short_oy", 0)} short</span> oy'
+            + (f' · en tutarlı kaynak %{sm["en_tutarli"] * 100:.0f}' if sm.get("en_tutarli") else "") + '</div></div>'
+            f'<div class="denge" style="margin-top:10px"><div class="b" style="width:{100 * sm.get("long_oy", 0) / toplam:.0f}%"></div>'
+            f'<div class="a" style="width:{100 * sm.get("short_oy", 0) / toplam:.0f}%"></div></div>'
+            + (f'<p class="kucuk">{_e(sm["neden"])}</p>' if sm.get("neden") else "")
+            + (f'<ul class="liste">{dayanak}</ul>' if dayanak else "") + '</div>')
+
+
 def _yon_karti(c: dict) -> str:
     y = c.get("yon") or {}
     sm = y.get("simdi") or {}
     if not sm:
         return ""
-    toplam = (sm.get("long_oy", 0) + sm.get("short_oy", 0)) or 1
-    dayanak = "".join(f'<li><span>{_e(d)}</span></li>' for d in sm.get("dayanak", []))
+    gs = y.get("gun_sonu") or {}
     sol = (f'{_baslik("Yön sinyali · şu an", "yon-sinyali")}'
-           f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">{_yon_rozeti(sm["sinyal"], True)}'
-           f'<div class="kucuk">güç <b class="mono">%{sm.get("guc", 0) * 100:.0f}</b> · '
-           f'<span class="iyi">{sm.get("long_oy", 0)} long</span> / <span class="kotu">{sm.get("short_oy", 0)} short</span> oy'
-           + (f' · en tutarlı kaynak %{sm["en_tutarli"] * 100:.0f}' if sm.get("en_tutarli") else "") + '</div></div>'
-           f'<div class="denge" style="margin-top:12px"><div class="b" style="width:{100 * sm.get("long_oy", 0) / toplam:.0f}%"></div>'
-           f'<div class="a" style="width:{100 * sm.get("short_oy", 0) / toplam:.0f}%"></div></div>'
-           + (f'<p class="kucuk">{_e(sm["neden"])}</p>' if sm.get("neden") else "")
-           + (f'<ul class="liste">{dayanak}</ul>' if dayanak else "")
-           + '<p class="cok-kucuk">Şu an aktif olan tüm tutarlı kural ve modellerin oylaması. Her kaynağın ağırlığı tutarlılığıyla artar. '
-             'Kaynakların vadeleri farklı olabilir (sonraki mum, 3 mum sonra, gün sonu…); dayanak listesinde yazar.</p>')
+           + _ufuk_blogu("Kısa vade", sm, f"sonraki {c['aralik']} mum ile birkaç mum sonrası")
+           + (_ufuk_blogu("Gün sonu", gs, "TSİ 23:59 kapanışına göre") if gs else "")
+           + '<p class="cok-kucuk">Şu an aktif olan tüm tutarlı kural ve modellerin oylaması; kısa vade ve gün sonu ayrı oylanır, '
+             'birbirine karıştırılmaz. Her kaynağın ağırlığı tutarlılığının <b>güvenli (Wilson alt sınırı)</b> değeriyle artar: '
+             'az örnekli bir kural, aynı yüzdeyle çok örnekli bir kuraldan daha az söz hakkı alır.</p>')
     satir = []
     for r in y.get("geriye", []):
         zaman = r["zaman"][11:16]
@@ -686,12 +570,12 @@ def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str
              if ts else "") + '<span id="saat" class="mono"></span>'
     return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#05070b">
-<title>{_e(baslik)}</title>{FONT}<style>{CSS}</style></head>
+<title>{_e(baslik)}</title>{FONT}<link rel="stylesheet" href="statik/pano.css?v={_SV}"></head>
 <body data-ts="{_e(ts)}" data-yenile="{yenile or 0}">
 <header class="ust-bar"><div class="ust-ic"><div class="marka"><span class="elmas"></span>KRİPTO RİSK TERMİNALİ<small>PRO</small></div>
 <nav class="menu">{menu}</nav><div class="canli">{canli}<span class="cok-kucuk mono" title="Kod sürümü (git)">sürüm {_e(config.SURUM)}</span></div></div>{serit}</header>
 {govde}
-<script>{JS}</script></body></html>"""
+<script src="statik/pano.js?v={_SV}"></script></body></html>"""
 
 
 def _degisim_hucre(v) -> str:
@@ -945,7 +829,8 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 </ul>
 <p><b>Gün sonu hedefinde özel kural:</b> Aynı günün 15m mumlarının hepsi aynı gün sonu kapanışına bakar. Bu yüzden 30 mumu 30 ayrı örnek saymak oranı yapay olarak şişirir. Sistem her günden yalnızca <b>ilk sinyali</b> sayar; test n = farklı gün sayısıdır. En az 20 farklı gün gerekir. Gün sonuna 1 saatten az kalmış mumlar gün sonu hesabına hiç girmez; çünkü günün son mumunda “gün sonu” o mumun kendisidir ve sonuç önceden bellidir. Bu kural olmasaydı model bunu ezberleyip sahte %95+ isabet gösterirdi.</p>
 <p><b>Yapay zekâ modellerinde:</b> Model önce geçmişin %40'ıyla eğitilir, sonraki dilimi tahmin eder. Sonra pencere ileri kayar (walk-forward). Güven eşiği ilk dilimlerde seçilir, tutarlılık en son dilimde ölçülür.</p>
-<p><b>Sağlama:</b> Sistem tamamen rastgele üretilmiş sahte fiyat verisiyle test edildi ve <b>sıfır</b> kural buldu; yapay zekâ isabeti %50'de kaldı. Yani rastgelelikten sahte formasyon üretmiyor ve geleceğe bakmıyor.</p>"""))
+<p><b>Sağlama:</b> Sistem tamamen rastgele üretilmiş sahte fiyat verisiyle test edildi ve <b>sıfır</b> kural buldu; yapay zekâ isabeti %50'de kaldı. Yani rastgelelikten sahte formasyon üretmiyor ve geleceğe bakmıyor.</p>
+<p><b>Dürüst uyarı:</b> Kurallar yine de “testte tutanlar” diye seçilir; binlerce aday denendiği için test oranları bir miktar iyimserdir. Bunun ölçüsü <b>sahte keşif testi</b>dir (<span class="mono">python -m btc_tahmin sahte</span>): hedefler koşullara göre tam gün kaydırılır (gün içi yapı korunur, “bu koşulda sonra ne oldu” bağı kopar) ve madencilik 5 kez tekrarlanır. Karışık veride ortalama 3 kural çıkıyor, gerçekte 12 varsa gerçek kuralların ~%25'i şans olabilir. Sonuç panoda kural kütüphanesinin altında ve Veri durumu panelinde görünür. Asıl hakem ise <b>canlı karne</b>dir: 100+ sonuçlanmış sinyalden sonra canlı isabet ile beklenen arasındaki fark Veri durumu panelinde izlenir; 10 puanı aşarsa uyarı verir.</p>"""))
     s.append(bol("derin", "8b. Derin tarama (%85+) ve grafikte inceleme", """
 <p>Normal taramadan daha derin ve daha seçici bir arama. “A indikatörü 30 civarındayken, B 20 civarındayken … X 10 civarındayken sonraki 3 mum artı gelmiş” türünden kuralları arar.</p>
 <ul class="liste">
@@ -973,7 +858,8 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <b>%{config.ISLEM_MALIYETI_YUZDE[config.ISLEM_TURU]:g}</b> (vadeli %0,14 · spot %0,24). Değiştirmek için ayarlar/kullanici.json içinde
 <span class="mono">"islem_turu"</span>.</span></li>
 <li><span><b>Ortalama net:</b> komisyon düşüldükten sonra işlem başına ortalama kazanç. <b>Kâr faktörü:</b> toplam kazanç ÷ toplam kayıp (1'in üstü kârlı, 1,5+ iyi).</span></li>
-<li><span><b>Eleme:</b> Test döneminde komisyon sonrası ortalama net kazancı sıfır ya da negatif olan kural <b>hiç gösterilmez</b>.</span></li>
+<li><span><b>Funding:</b> vadeli işlemde pozisyon her 8 saat açık kaldığında funding ödenir (varsayılan %{config.FUNDING_8S_YUZDE:g}). Gün sonu ve “8 mum sonra” gibi uzun hedeflerde bu da maliyete eklenir; 1-3 mumluk hedeflerde sıfırdır. Spotta yoktur. Ayar: <span class="mono">"funding_8s_yuzde"</span>.</span></li>
+<li><span><b>KOMİSYONA YENİLİYOR rozeti:</b> Test döneminde komisyon sonrası ortalama net kazancı sıfır ya da negatif olan kural böyle işaretlenir (yönü tutuyor ama hareket küçük). Ayarlardan <span class="mono">"net_zararli_kurallari_ele": true</span> yaparsan bu kurallar hiç gösterilmez.</span></li>
 <li><span><b>ZAYIFLIYOR rozeti:</b> Kuralın son 20 oluşumdaki isabeti, test tutarlılığının 15 puan altına düştüyse çıkar. Kural eskisi kadar tutmuyor olabilir.</span></li>
 </ul>"""))
     s.append(bol("simulasyon", "8d. Kasa simülasyonu", """
@@ -1003,9 +889,10 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
     s.append(bol("yon-sinyali", "8g. Yön sinyali ve geriye dönük kontrol", f"""
 <p><b>Yön sinyali</b> (LONG / SHORT / BEKLE): Son kapanan mumda aktif olan tüm tutarlı kaynaklar oy verir:</p>
 <ul class="liste">
-<li><span>Aktif kombinasyon kuralları (sonraki mum, gün sonu, derin tarama).</span></li>
+<li><span>Aktif kombinasyon kuralları (sonraki mum, derin tarama, gün sonu).</span></li>
 <li><span>Yapay zekâ modelleri; ama sadece o an güven eşiğini geçiyorlarsa.</span></li>
-<li><span>Her oyun ağırlığı tutarlılık − 0,5. Yani %90'lık bir kural, %70'lik bir kuralın iki katı ağırlıkta.</span></li>
+<li><span><b>İki ayrı oylama var:</b> kısa vade (sonraki mum, 2-8 mum sonra, seri mumlar) ve gün sonu. Farklı vadeler aynı oya karıştırılmaz; “sonraki mum yeşil” diyen bir kural gün sonu kararına katılmaz.</span></li>
+<li><span>Her oyun ağırlığı <b>güvenli tutarlılık − 0,5</b>. Güvenli tutarlılık = Wilson alt sınırı: 20 örnekte %85 tutan bir kuralın güvenli değeri ~%68, 200 örnekte %85 tutanın ~%80'dir. Yani az örnekli kural daha az söz hakkı alır. Dayanak listesinde “n=” örnek sayısı ve “güvenli %” yazar.</span></li>
 <li><span>İki tarafın ağırlığı birbirine çok yakınsa (fark %{int(KARARSIZLIK_ESIGI * 100)}'nin altında) ya da hiç aktif kaynak yoksa sonuç <b>BEKLE</b>.</span></li>
 </ul>
 <p><b>Geriye dönük kontrol:</b> 15, 30, 45 ve 60 dakika önceki mumda sistem hangi sinyali veriyordu? O an long ya da short açsaydın, şu anki fiyatla komisyon dahil ne durumda olurdun?
@@ -1137,98 +1024,11 @@ Panodaki <span class="bilgi" style="display:inline-grid;place-items:center;width
 
 
 # ------------------------------------------------------------------ grafik sayfası
-GRAFIK_JS = r"""
-(function(){
-var OFS=10800, q=new URLSearchParams(location.search), S=q.get('s')||'', K=q.get('k')||'';
-var $=function(id){return document.getElementById(id)};
-function hata(m){$('icerik').innerHTML='<div class="kart"><p>'+m+'</p><p class="kucuk"><a href="rapor.html">← Panoya dön</a></p></div>'}
-function esc(x){return String(x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
-function tarih(t){var d=new Date((t+OFS)*1000);return d.toISOString().slice(0,16).replace('T',' ')}
-function fiyat(x){return x==null?'—':(x>=100?x.toLocaleString('tr-TR',{maximumFractionDigits:2}):x.toLocaleString('tr-TR',{maximumFractionDigits:5}))}
-if(!/^[A-Z0-9]+_[0-9]+m$/.test(S)){hata('Geçersiz adres.');return}
-if(typeof LightweightCharts==='undefined'){hata('Grafik kütüphanesi yüklenemedi (cikti/statik klasörü eksik). Raporu yeniden üret.');return}
-var sc=document.createElement('script');sc.src='veri/'+S+'.js?'+Date.now();
-sc.onerror=function(){hata('Grafik verisi bulunamadı. Önce raporu üret: <span class="mono">python -m btc_tahmin rapor</span>')};
-sc.onload=function(){var D=(window.KR||{})[S];if(!D){hata('Veri okunamadı.');return}var R=D.kurallar[K];
-  if(!R){hata('Bu kural güncel raporda yok (kurallar her gün yeniden aranır). Panodan yeni bir kural seç.');return}ciz(D,R)};
-document.head.appendChild(sc);
-
-function ciz(D,R){
-  var up=R.yukselis, sinif=up?'iyi':'kotu', BOL=['Eğitim','Doğrulama','Test','ŞU AN'];
-  document.title=D.sembol.replace('USDT','')+' · '+R.hedef+' · Kural grafiği';
-  var O=R.olusumlar, biten=O.filter(function(o){return o[2]>=0}), tut=biten.filter(function(o){return o[2]===1});
-  function oran(a){var t=a.filter(function(o){return o[2]===1}).length;return a.length?(100*t/a.length).toFixed(0)+'%':'—'}
-  function ort(a,k){k=k||5;if(!a.length)return '—';var s=0;a.forEach(function(o){s+=o[k]});return (s/a.length>=0?'+':'')+(s/a.length).toFixed(2)+'%'}
-  function topla(a){var s=0;a.forEach(function(o){s+=o[6]});return s}
-  var tutmayan=biten.filter(function(o){return o[2]===0}), aktif=O.some(function(o){return o[1]===3});
-  var cips=R.kosullar.map(function(k){return '<span class="cip '+k.egilim+'" title="'+esc(k.aciklama)+'">'+esc(k.etiket)+'</span>'}).join('');
-  $('icerik').innerHTML=
-   '<div class="kart bolum"><div class="kart-baslik"><span>'+esc(D.sembol)+' · '+esc(D.aralik)+' · kural grafiği</span><a href="rapor.html" class="kucuk">← Panoya dön</a></div>'+
-   '<div class="kural-ust"><span class="rozet '+sinif+'">'+(up?'▲ ':'▼ ')+esc(R.hedef)+'</span><span class="kural-yuzde '+sinif+'">%'+Math.round(R.tutarlilik*100)+'</span>'+
-   '<span class="kucuk">test tutarlılığı · '+R.kosullar.length+' koşul'+(aktif?' · <b class="altin">ŞU AN AKTİF</b>':'')+'</span></div>'+
-   '<div style="margin-top:6px">'+cips+'</div>'+
-   '<p class="satir-not">Aşağıdaki grafikte bu koşulların <b>tüm geçmişte</b> aynı anda oluştuğu her an işaretli. '+
-   '<span class="iyi">Yeşil ok</span> = tuttu, <span class="kotu">kırmızı daire</span> = tutmadı, <span class="altin">altın</span> = şu an aktif (sonuç bekleniyor). '+
-   (R.blok>1?'Birbirine '+R.blok+' mumdan yakın tekrarlar tek sayılır (aynı mumları paylaştıkları için).':'')+' Saatler TSİ.</p></div>'+
-   '<div class="izgara-4 kpi-4">'+
-    kpi('Tüm zamanlar',tut.length+' / '+biten.length,'isabet '+oran(biten))+
-    kpi('Eğitim · doğrulama',oran(biten.filter(function(o){return o[1]===0}))+' · '+oran(biten.filter(function(o){return o[1]===1})),'kuralın bulunduğu ve elendiği dönemler')+
-    kpi('Test (hiç görülmemiş)',oran(biten.filter(function(o){return o[1]===2})),'n = '+biten.filter(function(o){return o[1]===2}).length+' · normal oran %'+Math.round(R.taban_oran*100))+
-    kpi('Net kazanç (komisyonlu)',ort(biten,6),'işlem başı ort. · maliyet %'+R.maliyet+' · toplam '+(topla(biten)>=0?'+':'')+topla(biten).toFixed(1)+'% · fiyat tuttuğunda '+ort(tut)+' / tutmadığında '+ort(tutmayan))+
-   '</div>'+
-   '<div class="kart bolum"><div class="kart-baslik"><span>Mum grafiği · tüm oluşumlar</span>'+
-   '<div class="filtre" id="filtre"><button data-f="hepsi" aria-pressed="true">Tümü</button><button data-f="test">Sadece test</button>'+
-   '<button data-f="tuttu">Tuttu</button><button data-f="tutmadi">Tutmadı</button></div></div>'+
-   '<div id="grafik" class="grafik-kutu"></div><p class="cok-kucuk">Tekerlekle yakınlaş, sürükleyerek kaydır. Tablodaki bir satıra tıklayınca grafik o ana gider.</p></div>'+
-   '<div class="kart bolum"><div class="kart-baslik"><span>Zaman içinde isabet · birikimli</span></div>'+
-   '<div id="grafik2" class="grafik-kucuk"></div><p class="cok-kucuk">Çizgi yatay ve yüksek kalıyorsa kural her dönemde tutmuş demektir. Sona doğru düşüyorsa kural zayıflıyor olabilir. Kesikli çizgi: normal (rastgele) oran.</p></div>'+
-   '<div class="kart bolum"><div class="kart-baslik"><span>Tüm oluşumlar ('+O.length+') · en yeni üstte</span></div><div class="tablo-sar" style="max-height:460px;overflow-y:auto"><table><thead><tr>'+
-   '<th>Tarih (TSİ)</th><th>Dönem</th><th class="sayi">Giriş</th><th class="sayi">Çıkış</th><th class="sayi">Fiyat değişimi</th><th class="sayi">Net işlem</th><th>Sonuç</th></tr></thead><tbody id="tablo"></tbody></table></div></div>';
-
-  var renk={yazi:'#8b97a9',cizgi:'rgba(148,163,184,.08)',kenar:'rgba(148,163,184,.22)'};
-  var ortak={layout:{background:{type:'solid',color:'transparent'},textColor:renk.yazi,fontFamily:'JetBrains Mono, monospace'},
-    grid:{vertLines:{color:renk.cizgi},horzLines:{color:renk.cizgi}},rightPriceScale:{borderColor:renk.kenar},
-    timeScale:{borderColor:renk.kenar,timeVisible:true,secondsVisible:false},crosshair:{mode:0},autoSize:true,
-    localization:{locale:'tr-TR',dateFormat:'dd.MM.yy'}};
-  var ch=LightweightCharts.createChart($('grafik'),ortak);
-  var mum=ch.addCandlestickSeries({upColor:'#16c784',downColor:'#ea3943',borderVisible:false,wickUpColor:'#16c784',wickDownColor:'#ea3943'});
-  var zam=D.mumlar.map(function(m){return m[0]});
-  mum.setData(D.mumlar.map(function(m){return {time:m[0]+OFS,open:m[1],high:m[2],low:m[3],close:m[4]}}));
-  function isaret(f){var L=O.filter(function(o){return f==='hepsi'||(f==='test'&&o[1]>=2)||(f==='tuttu'&&o[2]===1)||(f==='tutmadi'&&o[2]===0)});
-    mum.setMarkers(L.map(function(o){var bek=o[2]<0;return {time:o[0]+OFS,position:up?'belowBar':'aboveBar',
-      color:bek?'#f3d778':(o[2]===1?'#16c784':'#ea3943'),shape:bek?'square':(o[2]===1?(up?'arrowUp':'arrowDown'):'circle'),
-      text:bek?'ŞİMDİ':''}}))}
-  isaret('hepsi');
-  function git(t){var lo=0,hi=zam.length-1;while(lo<hi){var m=(lo+hi)>>1;if(zam[m]<t)lo=m+1;else hi=m}
-    ch.timeScale().setVisibleLogicalRange({from:lo-70,to:lo+40});window.scrollTo({top:$('grafik').getBoundingClientRect().top+scrollY-120,behavior:'smooth'})}
-  if(O.length){var t0=O[O.length-1][0],lo=0,hi=zam.length-1;while(lo<hi){var m=(lo+hi)>>1;if(zam[m]<t0)lo=m+1;else hi=m}
-    ch.timeScale().setVisibleLogicalRange({from:lo-70,to:lo+40})}
-  document.querySelectorAll('#filtre button').forEach(function(b){b.addEventListener('click',function(){
-    document.querySelectorAll('#filtre button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});isaret(b.dataset.f)})});
-
-  var ch2=LightweightCharts.createChart($('grafik2'),ortak), taban=R.taban_oran*100,
-    cizgi=ch2.addLineSeries({color:'#f3d778',lineWidth:2,priceFormat:{type:'percent'},
-      autoscaleInfoProvider:function(f){var r=f();if(!r)return r;r.priceRange.minValue=Math.min(r.priceRange.minValue,taban-5);r.priceRange.maxValue=Math.max(r.priceRange.maxValue,100);return r}});
-  var h=0,n=0,nokta=[];biten.forEach(function(o){n++;h+=o[2];nokta.push({time:o[0]+OFS,value:100*h/n})});
-  var tekil=[];nokta.forEach(function(p){if(tekil.length&&tekil[tekil.length-1].time===p.time)tekil[tekil.length-1]=p;else tekil.push(p)});
-  cizgi.setData(tekil);cizgi.createPriceLine({price:R.taban_oran*100,color:'#8b97a9',lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'normal'});
-  ch2.timeScale().fitContent();
-
-  var satir=O.slice().reverse().map(function(o){var s=o[2]<0?'<span class="rozet altin">BEKLENİYOR</span>':(o[2]===1?'<span class="rozet iyi">✓ TUTTU</span>':'<span class="rozet kotu">✕ TUTMADI</span>');
-    var d=o[5]==null?'—':'<span class="'+(o[5]>=0?'iyi':'kotu')+'">'+(o[5]>=0?'+':'')+o[5].toFixed(2)+'%</span>';
-    return '<tr class="tik" data-t="'+o[0]+'"><td class="mono">'+tarih(o[0])+'</td><td>'+BOL[o[1]]+'</td><td class="sayi mono">'+fiyat(o[3])+'</td><td class="sayi mono">'+fiyat(o[4])+'</td><td class="sayi mono">'+d+'</td><td class="sayi mono">'+(o[6]==null?'—':'<span class="'+(o[6]>=0?'iyi':'kotu')+'">'+(o[6]>=0?'+':'')+o[6].toFixed(2)+'%</span>')+'</td><td>'+s+'</td></tr>'}).join('');
-  $('tablo').innerHTML=satir;
-  $('tablo').addEventListener('click',function(e){var tr=e.target.closest('tr');if(!tr)return;
-    document.querySelectorAll('#tablo tr.secili').forEach(function(x){x.classList.remove('secili')});tr.classList.add('secili');git(+tr.dataset.t)});
-}
-function kpi(e,d,a){return '<div class="kart"><div class="kart-baslik"><span>'+e+'</span></div><div class="dev" style="font-size:30px">'+d+'</div><div class="kucuk">'+a+'</div></div>'}
-})();
-"""
 
 
 def grafik_html() -> str:
     govde = ('<main id="icerik"><div class="kart"><p class="kucuk">Grafik yükleniyor…</p></div></main>'
              '<script src="statik/lightweight-charts.standalone.production.js"></script>'
-             f'<script>{GRAFIK_JS}</script>'
+             f'<script src="statik/grafik.js?v={_SV}"></script>'
              '<footer>Grafik: TradingView Lightweight Charts™ (Apache 2.0). Geçmiş isabet geleceğin garantisi değildir.</footer>')
     return _iskelet("Kural Grafiği · Kripto Risk Terminali", "grafik.html", govde)

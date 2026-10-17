@@ -17,6 +17,16 @@ def islem_maliyeti() -> float:
     return float(config.ISLEM_MALIYETI_YUZDE[config.ISLEM_TURU])
 
 
+def mum_saati(o: pd.DataFrame) -> float:
+    """Bir mumun süresi (saat)."""
+    return float(o["time"].diff().median().total_seconds() / 3600) if len(o) > 1 else 0.25
+
+
+def funding_maliyeti(saat) -> np.ndarray | float:
+    """Pozisyonun açık kaldığı saate göre funding maliyeti (%); 8 saatte bir ödenir, vadeli dışında sıfır."""
+    return np.floor(np.asarray(saat, dtype=float) / 8) * config.FUNDING_8S_YUZDE
+
+
 def _gun(o: pd.DataFrame) -> pd.Series:
     return (o["time"] + pd.Timedelta(hours=config.GUN_SONU_UTC_OFFSET_SAAT)).dt.floor("D")
 
@@ -52,9 +62,11 @@ def olusumlar(r: dict, o: pd.DataFrame, KT: pd.DataFrame, hedef: pd.DataFrame) -
     cik = cikis_idx[idx]
     brut = (c[cik] / c[idx] - 1) * 100 * (1 if yukselis else -1)   # işlem yönüne göre % getiri
     sira = np.searchsorted(V, idx)
+    funding = funding_maliyeti((cik - idx) * mum_saati(o))
     return {
         "idx": idx, "cikis_idx": cik, "bolum": np.where(sira < s1, 0, np.where(sira < s2, 1, 2)),
-        "isabet": (y.to_numpy()[idx] == yon).astype(int), "brut": brut, "net": brut - islem_maliyeti(),
+        "isabet": (y.to_numpy()[idx] == yon).astype(int), "brut": brut, "net": brut - islem_maliyeti() - funding,
+        "funding": funding,
         "yukselis": yukselis, "blok": blok, "aktif": bool(maske[-1]),
     }
 

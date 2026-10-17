@@ -42,6 +42,14 @@ def kontrol(rapor: dict) -> list[dict]:
                             f"Son kapanan mum {gecikme.total_seconds() / 60:.0f} dk önce. Veri güncellenemiyor olabilir (Binance bağlantısı)."))
         else:
             s.append(_satir("Mum verisi", f"{sembol} mumları", "ok", f"{c['veri_mum_sayisi']:,} mum, son mum {c['son_mum_zamani'][11:16]} UTC"))
+        vb = c.get("veri_boslugu")
+        if vb:
+            kotu = vb["eksik_yuzde"] > 0.5 or vb["son7_gun_bosluk"] > 0
+            s.append(_satir("Mum verisi", f"{sembol} veri bütünlüğü", "hata" if kotu else "ok",
+                            (f"{vb['eksik_mum']} eksik mum (%{vb['eksik_yuzde']}), {vb['bosluk_sayisi']} boşluk, son 7 günde {vb['son7_gun_bosluk']}. "
+                             "Boşluk anlarında indikatörler bozulabilir; Binance bakımı ya da indirme kesintisi. "
+                             "Çözüm: veri/ klasöründeki ilgili CSV'yi silip yeniden indirt.") if kotu else
+                            (f"{vb['eksik_mum']} eksik mum (%{vb['eksik_yuzde']}), hepsi 7 günden eski" if vb["eksik_mum"] else "Boşluk yok")))
 
     # --- Dominans
     d = b.get("dominans")
@@ -128,6 +136,16 @@ def kontrol(rapor: dict) -> list[dict]:
     s.append(_satir("Canlı karne", "Sinyal günlüğü", "ok" if k.get("toplam") else "normal",
                     f"{k['toplam']} sinyal kayıtlı, {k.get('bekleyen', 0)} sonuç bekliyor" if k.get("toplam") else
                     "Henüz kayıt yok. Canlı modda çalıştıkça dolar."))
+    g = k.get("genel") or {}
+    if g.get("sinyal", 0) >= 100:
+        fark = (g.get("beklenen_isabet") or 0) - (g.get("isabet") or 0)
+        s.append(_satir("Canlı karne", "Canlı isabet ile test tutarlılığı farkı", "hata" if fark > 0.10 else "ok",
+                        f"canlı %{g['isabet'] * 100:.0f} vs beklenen %{g['beklenen_isabet'] * 100:.0f} ({g['sinyal']} sinyal). "
+                        + ("Fark 10 puanı aşıyor: test tutarlılıkları iyimser, eşikleri sıkılaştırmak gerekir."
+                           if fark > 0.10 else "Fark makul.")))
+    else:
+        s.append(_satir("Canlı karne", "Canlı isabet ile test tutarlılığı farkı", "normal",
+                        f"Karşılaştırma için en az 100 sonuçlanmış sinyal gerekir (şu an {g.get('sinyal', 0)})."))
     bd = rapor.get("bildirim") or {}
     s.append(_satir("Canlı karne", "Telegram bildirimi", "hata" if str(bd.get("durum", "")).startswith("hata") else
                     ("ok" if bd.get("durum") == "ok" else "normal"),
@@ -170,6 +188,17 @@ def kontrol(rapor: dict) -> list[dict]:
                         "Gün sonu yönü için %70+ tutan kombinasyon yok. Bu sık görülür: gün sonu yönü zor tahmin edilir."))
         s.append(_satir(g, "Derin tarama kütüphanesi (%85+)", "ok" if ks.get("derin") else "normal",
                         f"{ks.get('derin', 0)} kural ({zr.get('derin', 0)} tanesi komisyon sonrası zararlı)" if ks.get("derin") else "%85+ tutan 3-7 koşullu kombinasyon bulunamadı."))
+        sk = c.get("sahte_kesif")
+        if sk:
+            top_g = sum(ks.values())
+            top_s = sum(sk["ortalama"].values())
+            s.append(_satir(g, "Sahte keşif testi", "hata" if top_g and top_s / top_g > 0.5 else ("ok" if top_g else "normal"),
+                            f"Karıştırılmış veride ortalama {top_s:.1f} kural bulundu, gerçekte {top_g}. "
+                            + (f"Gerçek kuralların ~%{min(100, 100 * top_s / top_g):.0f}'i şans eseri olabilir." if top_g else "")
+                            + f" ({sk['tekrar']} tekrar, {sk['zaman'][:10]})"))
+        else:
+            s.append(_satir(g, "Sahte keşif testi", "normal",
+                            "Henüz çalıştırılmadı. Kaç kuralın şans eseri olabileceğini ölçer: python -m btc_tahmin sahte"))
         sim = (c.get("simulasyon") or {}).get("derin")
         s.append(_satir(g, "Kasa simülasyonu (derin kurallar)", "ok" if sim else "normal",
                         f"{sim['baslangic_kasa']:,.0f}$ → {sim['son_kasa']:,.0f}$ ({sim['islem']} işlem)" if sim else
@@ -178,10 +207,11 @@ def kontrol(rapor: dict) -> list[dict]:
         s.append(_satir(g, "Pozisyon hesaplayıcı", "ok" if pz.get("durum") == "var" else "normal",
                         f"{pz['yon']} · {pz['pozisyon_usd']:,.0f}$ · stop {pz['stop_yuzde']}%" if pz.get("durum") == "var"
                         else pz.get("neden", "")))
-        sm = ((c.get("yon") or {}).get("simdi") or {})
-        s.append(_satir(g, "Yön sinyali (LONG/SHORT)", "ok" if sm.get("sinyal") in ("LONG", "SHORT") else "normal",
-                        f"{sm.get('sinyal')} · güç %{sm.get('guc', 0) * 100:.0f}" if sm.get("sinyal") in ("LONG", "SHORT")
-                        else (sm.get("neden") or "Aktif tutarlı kaynak yok.")))
+        for ad, anahtar in (("Yön sinyali · kısa vade", "simdi"), ("Yön sinyali · gün sonu", "gun_sonu")):
+            sm = ((c.get("yon") or {}).get(anahtar) or {})
+            s.append(_satir(g, ad, "ok" if sm.get("sinyal") in ("LONG", "SHORT") else "normal",
+                            f"{sm.get('sinyal')} · güç %{sm.get('guc', 0) * 100:.0f}" if sm.get("sinyal") in ("LONG", "SHORT")
+                            else (sm.get("neden") or "Aktif tutarlı kaynak yok.")))
         aktif = len(c["sonraki_mum"]["aktif_kurallar"])
         s.append(_satir(g, "Şu an aktif sonraki mum kuralı", "ok" if aktif else "normal",
                         f"{aktif} kural" if aktif else "Son mumda tutarlı kombinasyon oluşmadı (sık olur)."))

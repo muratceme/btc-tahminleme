@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Lint
+        run: python -m pyflakes btc_tahmin tests
+      - name: Birim testleri (hızlı)
+        run: python -m pytest -q tests/test_birim.py
+      - name: Uçtan uca, sızıntı ve karne testleri (sentetik veri, ağ yok)
+        run: python -m pytest -q tests/sentetik_test.py tests/sizinti_test.py tests/karne_test.py
