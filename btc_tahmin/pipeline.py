@@ -258,12 +258,22 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
     }
 
 
+def _ilerleme(i: int, toplam: int, sembol: str) -> None:
+    """Terminale ve (canlı moddaysa) 'hazırlanıyor' sayfasına ilerleme yazar."""
+    from . import sunucu
+    mesaj = f"{sembol} analiz ediliyor ({i + 1}/{toplam}) ..."
+    print(f"  · {mesaj}", flush=True)
+    sunucu.DURUM = mesaj
+
+
 def calistir(aralik: str = config.VARSAYILAN_ARALIK, semboller=None, hizli: bool = False,
              guncelle: bool = True, mumlar: dict | None = None, baglam: dict | None = None) -> dict:
     from . import data
     semboller = semboller or config.SEMBOLLER
     mumlar_verildi = mumlar is not None
     if mumlar is None:
+        from . import sunucu
+        sunucu.DURUM = "Binance'ten mumlar indiriliyor ve piyasa verileri toplanıyor ..."
         mumlar = {s: data.mumlari_getir(s, aralik, guncelle=guncelle) for s in config.SEMBOLLER}
     if baglam is None:
         baglam = market.baglam_topla(config.SEMBOLLER)
@@ -279,7 +289,8 @@ def calistir(aralik: str = config.VARSAYILAN_ARALIK, semboller=None, hizli: bool
     rapor = {
         "olusturma": datetime.now(timezone.utc).isoformat(),
         "aralik": aralik, "genel_puan": kirim, "baglam": baglam,
-        "coinler": {s: coin_analizi(s, aralik, mumlar, kirim, hizli, gunluk.emekliler(gun)) for s in semboller},
+        "coinler": {s: _ilerleme(i, len(semboller), s) or coin_analizi(s, aralik, mumlar, kirim, hizli, gunluk.emekliler(gun))
+                    for i, s in enumerate(semboller)},
         "uyari": ("Bu sistem istatistiksel bir karar destek aracıdır, yatırım tavsiyesi değildir. "
                   "Tutarlılık oranları geçmiş TEST dönemine aittir; piyasa rejimi değişirse düşebilir."),
     }

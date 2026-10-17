@@ -97,6 +97,7 @@ def main(argv=None):
         if args.tunel and not args.sifre:
             args.sifre = secrets.token_urlsafe(6)
         sunucu.SIFRE = args.sifre
+        sunucu.HAZIR = False
         try:
             sunucu.baslat(args.port)
         except OSError:
@@ -130,6 +131,8 @@ sonra calistir.bat'ı tekrar çalıştır. Bundan sonraki sürümler eski kopyay
         try:
             yol = _rapor(args, yenile_sn=60)
             if adres:
+                from . import sunucu
+                sunucu.HAZIR = True
                 print(f"Pano güncellendi: {adres}")
             elif ilk and args.ac:
                 webbrowser.open(yol.as_uri())

@@ -24,9 +24,14 @@ HAZIRLANIYOR = """<!doctype html><html lang="tr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15">
 <title>Hazırlanıyor</title><style>body{margin:0;background:#07090d;color:#d7dde6;font:16px ui-monospace,monospace;
 display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:16px}
-b{color:#fbbf24}</style></head><body><div><b>◆ KRİPTO RİSK TERMİNALİ</b><p>İlk analiz hazırlanıyor...</p>
-<p style="color:#7c8a9c;font-size:13px">İlk çalıştırmada veri indirildiği için birkaç dakika sürebilir.<br>
-Bu sayfa 15 saniyede bir kendini yeniler.</p></div></body></html>"""
+b{color:#fbbf24}a{color:#f3d778}</style></head><body><div><b>◆ KRİPTO RİSK TERMİNALİ</b><p>Analiz hazırlanıyor...</p>
+<p style="color:#d7dde6;font-size:14px">__DURUM__</p>
+<p style="color:#7c8a9c;font-size:13px">Program yeni açıldı; ilk tur hesap bitene kadar güncel rapor yok.<br>
+İlk açılışta (özellikle kurallar yeniden aranırken) 10-15 dakika sürebilir. Sonraki güncellemeler çok daha hızlıdır.<br>
+Bu sayfa 15 saniyede bir kendini yeniler; rapor hazır olunca otomatik açılır.</p>
+__ESKI__</div></body></html>"""
+HAZIR = True          # canlı modda ilk tur bitene kadar False: eski rapor yeniymiş gibi gösterilmez
+DURUM = "Başlıyor ..."
 
 
 SIFRE: str | None = None     # ayarlanırsa pano kullanıcı adı "kripto" + bu şifreyle korunur
@@ -71,8 +76,11 @@ class _Isleyici(SimpleHTTPRequestHandler):
             return
         if self.path in ("/", "/index.html"):
             self.path = "/rapor.html"
-        if self.path.split("?")[0] == "/rapor.html" and not (config.CIKTI_DIR / "rapor.html").exists():
-            veri = HAZIRLANIYOR.encode("utf-8")
+        var = (config.CIKTI_DIR / "rapor.html").exists()
+        if self.path.split("?")[0] == "/rapor.html" and (not var or (not HAZIR and "eski=1" not in self.path)):
+            eski = ('<p style="font-size:13px"><a href="/rapor.html?eski=1">Beklerken önceki raporu göster →</a></p>'
+                    if var else "")
+            veri = HAZIRLANIYOR.replace("__DURUM__", DURUM).replace("__ESKI__", eski).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(veri)))
