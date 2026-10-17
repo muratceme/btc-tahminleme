@@ -9,7 +9,7 @@ import html
 import math
 
 from . import config
-from .aciklama import AILELER, FORMASYONLAR, GRUP_SIRASI, kosul_bilgisi
+from .aciklama import AILELER, FORMASYONLAR, GRUP_SIRASI, hedef_metni, kosul_bilgisi
 
 CSS = """
 :root{--bg:#05070b;--panel:#0c1119;--panel2:#101722;--cizgi:rgba(148,163,184,.13);--cizgi2:rgba(148,163,184,.22);
@@ -58,7 +58,7 @@ ul.liste{list-style:none;margin:10px 0 0;padding:0}ul.liste li{display:flex;gap:
 border-top:1px solid var(--cizgi);font-size:13px}ul.liste li:first-child{border-top:0}
 .etiket-sag{font-family:var(--mono);white-space:nowrap}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid var(--cizgi);text-align:left;vertical-align:top}
-th{color:var(--soluk2);font-weight:700;font-size:10px;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+th{position:sticky;top:0;background:var(--panel);color:var(--soluk2);font-weight:700;font-size:10px;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
 td.sayi,th.sayi{text-align:right}tbody tr:hover{background:rgba(255,255,255,.025)}.tablo-sar{overflow-x:auto;margin:0 -4px}
 .rozet{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.04em;
 white-space:nowrap;border:1px solid currentColor;background:color-mix(in srgb,currentColor 12%,transparent)}
@@ -108,6 +108,14 @@ tr.pasif td{opacity:.5}.satir-not{color:var(--soluk);font-size:12px;margin-top:4
 .kural{border:1px solid var(--cizgi);border-radius:10px;padding:12px;margin-bottom:10px;background:rgba(255,255,255,.015)}
 .kural-ust{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
 .kural-yuzde{font-family:var(--mono);font-size:20px;font-weight:800}
+.grafik-btn{margin-left:auto;font-size:12px;font-weight:700;color:var(--altin2);border:1px solid rgba(212,175,55,.45);border-radius:8px;
+padding:4px 10px;background:rgba(212,175,55,.07);white-space:nowrap}.grafik-btn:hover{background:rgba(212,175,55,.16);text-decoration:none}
+.derin-kart{border-color:rgba(212,175,55,.35);box-shadow:0 0 0 1px rgba(212,175,55,.12) inset,0 10px 30px rgba(0,0,0,.35)}
+.grafik-kutu{height:520px;margin-top:10px}.grafik-kucuk{height:200px;margin-top:10px}@media (max-width:640px){.grafik-kutu{height:380px}}
+.kpi-4{grid-template-columns:repeat(auto-fit,minmax(min(150px,45%),1fr))}.kpi-4 .dev{font-size:clamp(20px,5vw,30px)!important}
+.filtre{display:flex;gap:6px;flex-wrap:wrap}.filtre button{font:600 12px var(--sans);color:var(--soluk);background:var(--panel);border:1px solid var(--cizgi);
+border-radius:8px;padding:6px 10px;cursor:pointer}.filtre button[aria-pressed=true]{color:var(--yazi);border-color:var(--altin)}
+tr.tik{cursor:pointer}tr.secili td{background:rgba(212,175,55,.08)}
 details{margin-top:12px}summary{cursor:pointer;color:var(--altin2);font-weight:600;font-size:13px}
 ul.liste.haber li{align-items:flex-start;justify-content:flex-start}.haber .skor{font-family:var(--mono);font-weight:700;min-width:30px}
 footer{max-width:1360px;margin:0 auto;padding:24px 16px 40px;color:var(--soluk2);font-size:12px;border-top:1px solid var(--cizgi)}
@@ -325,18 +333,21 @@ def _risk_tablosu(c: dict) -> str:
             + "".join(tr) + "</tbody></table></div>")
 
 
-def _kural_karti(r: dict, aralik: str) -> str:
-    yesil = r["yon"].startswith("YESIL")
-    sinif = "iyi" if yesil else "kotu"
+def _kural_karti(r: dict, aralik: str, sembol: str | None = None) -> str:
+    yon = 1 if r["yon"].startswith("YESIL") else 0
+    yukselis, hedef = hedef_metni(r["hedef"], yon, aralik)
+    sinif = "iyi" if yukselis else "kotu"
     n, oran = r["test_n"], r["tutarlilik"]
     isabet = round(n * oran)
-    hedef = f"sonraki {aralik} mum" if r["hedef"] == "sonraki_mum" else "gün sonu kapanışı"
-    return (f'<div class="kural"><div class="kural-ust"><span class="rozet {sinif}">{"▲ YEŞİL" if yesil else "▼ KIRMIZI"}</span>'
-            f'<span class="kural-yuzde {sinif}">%{oran*100:.0f}</span><span class="kucuk">tutarlılık · {_e(hedef)}</span></div>'
+    buton = (f'<a class="grafik-btn" href="grafik.html?s={_e(sembol)}_{_e(aralik)}&amp;k={_e(r["id"])}">📈 Grafikte incele</a>'
+             if sembol and r.get("id") else "")
+    birim = "gün" if r["hedef"] == "gun_sonu" else "bağımsız"
+    return (f'<div class="kural"><div class="kural-ust"><span class="rozet {sinif}">{"▲" if yukselis else "▼"} {_e(hedef)}</span>'
+            f'<span class="kural-yuzde {sinif}">%{oran*100:.0f}</span><span class="kucuk">tutarlılık · {len(r["kosullar"])} koşul</span>{buton}</div>'
             + "".join(_cip(k) for k in r["kosullar"]) +
-            f'<div class="satir-not">Test döneminde bu {len(r["kosullar"])} koşul aynı anda <b>{n}</b> kez oluştu, '
-            f'<b>{isabet}</b>\'inde {_e(hedef)} {"yeşil/yukarı" if yesil else "kırmızı/aşağı"} geldi. '
-            f'Normalde bu oran %{r["taban_oran"]*100:.0f} · kaldıraç x{r["kaldirac_lift"]} · eğitimde %{(r["egitim_oran"] or 0)*100:.0f}.</div></div>')
+            f'<div class="satir-not">Hiç görülmemiş test döneminde bu {len(r["kosullar"])} koşul aynı anda <b>{n}</b> kez ({birim} oluşum) görüldü, '
+            f'<b>{isabet}</b>\'inde tuttu. Normalde bu oran %{r["taban_oran"]*100:.0f} · kaldıraç x{r["kaldirac_lift"]} · '
+            f'eğitimde %{(r["egitim_oran"] or 0)*100:.0f} · doğrulamada %{(r["dogrulama_oran"] or 0)*100:.0f}.</div></div>')
 
 
 def _coin(c: dict, kirim: dict) -> str:
@@ -375,7 +386,7 @@ def _coin(c: dict, kirim: dict) -> str:
 </div>"""
 
     aktif = c["sonraki_mum"]["aktif_kurallar"]
-    kural_html = "".join(_kural_karti(r, c["aralik"]) for r in aktif[:8]) if aktif else (
+    kural_html = "".join(_kural_karti(r, c["aralik"], c["sembol"]) for r in aktif[:8]) if aktif else (
         '<p class="kucuk">Son kapanan mumda %70+ tutarlılıkta bir kombinasyon aktif değil. '
         'Bu sık olur; tek mumun yönü büyük ölçüde rastgeledir. Sistem emin olmadığında susar.</p>')
     en_iyi: dict[str, dict] = {}
@@ -392,7 +403,17 @@ def _coin(c: dict, kirim: dict) -> str:
                f'<span class="{"iyi" if y else "kotu"}">{"▲ YEŞİL" if y else "▼ KIRMIZI"} %{max(r["p_yukari_simdi"], 1-r["p_yukari_simdi"])*100:.0f}</span> {durum}</span></li>')
     ml_html = f'<ul class="liste" style="margin-bottom:12px">{ml}</ul>' if ml else ""
 
-    kut = lambda lst: "".join(_kural_karti(r, c["aralik"]) for r in lst[:20]) or '<p class="kucuk">Kural yok.</p>'  # noqa: E731
+    kut = lambda lst: "".join(_kural_karti(r, c["aralik"], c["sembol"]) for r in lst[:20]) or '<p class="kucuk">Kural yok.</p>'  # noqa: E731
+    derin_aktif = c.get("derin", {}).get("aktif", [])
+    derin_lib = c["kural_kutuphanesi"].get("derin", [])
+    derin_html = (
+        _baslik(f"Derin tarama · %{int(config.DERIN_MIN_TUTARLILIK * 100)}+ · şu an aktif", "derin")
+        + ('<p class="kucuk" style="margin-top:-4px">3-7 indikatörün ince eşiklerle aynı anda oluştuğu, hiç görülmemiş test döneminde '
+           f'%{int(config.DERIN_MIN_TUTARLILIK * 100)} ve üzeri tutmuş kombinasyonlar. İşlem açarken ek teyit olarak bak.</p>')
+        + ("".join(_kural_karti(r, c["aralik"], c["sembol"]) for r in derin_aktif[:10]) if derin_aktif else
+           '<p class="kucuk">Son kapanan mumda %85+ derin kural aktif değil. Bu kurallar nadir oluşur; çıktığında değerlidir.</p>')
+        + f'<details><summary>Tüm derin kurallar ({c["kural_sayisi"].get("derin", 0)} kural, en iyi 20) · aktif olmasalar da grafikte incelenebilir</summary>'
+        f'<div style="margin-top:10px">{kut(derin_lib)}</div></details>')
     tek_ad = {"RSI": "RSI (14)", "ADX": "ADX trend gücü", "MACD_hist": "MACD histogram", "Supertrend": "Supertrend",
               "BB_%": "Bollinger %B", "ATR_%": "ATR (mum boyu %)", "EMA200_ustunde": "EMA200 üstünde", "VWAP_sapma_%": "VWAP sapması %"}
     tek_html = "".join(
@@ -403,6 +424,7 @@ def _coin(c: dict, kirim: dict) -> str:
 <section class="coin" id="{_e(c['sembol'])}">
 {hero}
 <div class="aciklama-kutu">{_dayanak_metni(c)}</div>
+<div class="kart bolum derin-kart">{derin_html}</div>
 <div class="kart bolum">{_baslik('Risk tablosu · yalnızca %70+ tutarlılık', 'tutarlilik')}{_risk_tablosu(c)}</div>
 <div class="iki-sutun">
   <div class="kart">{_baslik(f"Sonraki {c['aralik']} mum · şu an aktif kombinasyonlar", 'kombinasyon')}{ml_html}{kural_html}</div>
@@ -552,7 +574,7 @@ def nasil_calisir_html() -> str:
     toc = [("ozet", "1. Tek cümlede sistem"), ("akis", "2. Adım adım akış"), ("veri", "3. Hangi veriler?"),
            ("indikatorler", "4. İndikatörler"), ("formasyonlar", "5. Formasyonlar"), ("baglam", "6. Bağlam koşulları"),
            ("kombinasyon", "7. Kombinasyon arama"), ("tutarlilik", "8. Tutarlılık nasıl ölçülür?"),
-           ("risk-turleri", "9. Risk türleri"), ("sinyal-haritasi", "10. Sinyal haritası"), ("kirimlar", "11. Genel puan ve kırımlar"),
+           ("derin", "8b. Derin tarama ve grafik"), ("risk-turleri", "9. Risk türleri"), ("sinyal-haritasi", "10. Sinyal haritası"), ("kirimlar", "11. Genel puan ve kırımlar"),
            ("dominans", "12. Dominanslar"), ("duygu", "13. Duygu ve vadeli"), ("haberler", "14. Haberler"),
            ("okuma", "15. Panoyu okuma rehberi"), ("sinirlar", "16. Sınırlar ve uyarılar"), ("sozluk", "17. Sözlük")]
     toc_html = "".join(f'<a href="#{i}">{_e(a)}</a>' for i, a in toc)
@@ -624,6 +646,24 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <p><b>Gün sonu hedefinde özel kural:</b> Aynı günün 15m mumlarının hepsi aynı gün sonu kapanışına bakar. Bu yüzden 30 mumu 30 ayrı örnek saymak oranı yapay olarak şişirir. Sistem her günden yalnızca <b>ilk sinyali</b> sayar; test n = farklı gün sayısıdır. En az 20 farklı gün gerekir. Gün sonuna 1 saatten az kalmış mumlar gün sonu hesabına hiç girmez; çünkü günün son mumunda “gün sonu” o mumun kendisidir ve sonuç önceden bellidir. Bu kural olmasaydı model bunu ezberleyip sahte %95+ isabet gösterirdi.</p>
 <p><b>Yapay zekâ modellerinde:</b> Model önce geçmişin %40'ıyla eğitilir, sonraki dilimi tahmin eder. Sonra pencere ileri kayar (walk-forward). Güven eşiği ilk dilimlerde seçilir, tutarlılık en son dilimde ölçülür.</p>
 <p><b>Sağlama:</b> Sistem tamamen rastgele üretilmiş sahte fiyat verisiyle test edildi ve <b>sıfır</b> kural buldu; yapay zekâ isabeti %50'de kaldı. Yani rastgelelikten sahte formasyon üretmiyor ve geleceğe bakmıyor.</p>"""))
+    s.append(bol("derin", "8b. Derin tarama (%85+) ve grafikte inceleme", """
+<p>Normal taramadan daha derin ve daha seçici bir arama. “A indikatörü 30 civarındayken, B 20 civarındayken … X 10 civarındayken sonraki 3 mum artı gelmiş” türünden kuralları arar.</p>
+<ul class="liste">
+<li><span><b>İnce eşikler:</b> RSI 5'er puanlık aralıklarla (35-40, 40-45 …), Stochastic/MFI/Williams %R 10'ar puanlık, CCI 50'şer, ADX 5'er puanlık aralıklarla. Bollinger %B, MACD gücü, EMA21'e uzaklık, VWAP sapması, 4 saatlik getiri, hacim ve alıcı payı da dar aralıklara bölünür. Toplam ~280 koşul taranır.</span></li>
+<li><span><b>3 ile 7 koşul</b> aynı anda: tek ya da iki indikatörlü basit kurallar burada gösterilmez.</span></li>
+<li><span><b>Hedefler:</b> sonraki mum · 2/3/4/8 mum sonra fiyat yukarıda mı aşağıda mı · sonraki 2 veya 3 mumun hepsi yeşil mi / hepsi kırmızı mı.</span></li>
+<li><span><b>Eşik %85:</b> Eğitimde %85+, doğrulamada %80+ ve hiç görülmemiş testte <b>%85+</b> tutmayan kural gösterilmez. Her dönemde en az 30 / 10 / 15 bağımsız oluşum gerekir.</span></li>
+<li><span><b>Bağımsızlık:</b> “3 mum sonra” hedefinde art arda gelen 3 sinyal aynı mumları paylaşır. Bu yüzden birbirine 3 mumdan yakın tekrarlar tek sayılır. Oranlar şişirilmez.</span></li>
+<li><span><b>Sağlama:</b> 540 günlük tamamen rastgele fiyat verisinde derin tarama <b>0</b> kural buldu.</span></li>
+</ul>
+<p><b>Grafikte incele:</b> Her kuralın yanındaki 📈 butonu ayrı bir sayfa açar:</p>
+<ul class="liste">
+<li><span>Mum grafiğinde kuralın <b>tüm geçmişteki</b> oluşumları işaretlidir: yeşil ok = tuttu, kırmızı daire = tutmadı, altın kare = şu an aktif.</span></li>
+<li><span>Tüm zamanlar / eğitim / doğrulama / test isabet oranları ve tuttuğunda ortalama ne kadar hareket ettiği.</span></li>
+<li><span><b>Birikimli isabet çizgisi:</b> Çizgi zaman içinde yatay ve yüksek kalıyorsa kural her dönemde tutmuştur. Sona doğru düşüyorsa kural zayıflıyor olabilir.</span></li>
+<li><span>Oluşum tablosunda bir satıra tıklayınca grafik o ana gider. Giriş, çıkış fiyatı ve değişim yazar.</span></li>
+</ul>
+<p class="kucuk">Derin kurallar nadir oluşur. Çoğu zaman “şu an aktif derin kural yok” görürsün. Aktif olduğunda, işlem açarken ek teyit olarak kullan.</p>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """
 <div class="tablo-sar"><table><thead><tr><th>Ad</th><th>Ne söyler?</th><th>Tutarlılık neyi ölçer?</th></tr></thead><tbody>
 <tr><td><b>Long riski</b></td><td>Şimdi long açarsan gün sonunda (TSİ 23:59) zararda olma ihtimali.</td><td>Model bu güvendeyken gün sonu yönünü ne sıklıkla doğru bildi.</td></tr>
@@ -720,3 +760,100 @@ Panodaki <span class="bilgi" style="display:inline-grid;place-items:center;width
 <footer>Bu sistem istatistiksel bir karar destek aracıdır, yatırım tavsiyesi değildir. · <a href="rapor.html">Panoya dön</a></footer>"""
     return _iskelet("Nasıl Çalışır · Kripto Risk Terminali", "nasil-calisir.html", govde)
 
+
+
+# ------------------------------------------------------------------ grafik sayfası
+GRAFIK_JS = r"""
+(function(){
+var OFS=10800, q=new URLSearchParams(location.search), S=q.get('s')||'', K=q.get('k')||'';
+var $=function(id){return document.getElementById(id)};
+function hata(m){$('icerik').innerHTML='<div class="kart"><p>'+m+'</p><p class="kucuk"><a href="rapor.html">← Panoya dön</a></p></div>'}
+function esc(x){return String(x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function tarih(t){var d=new Date((t+OFS)*1000);return d.toISOString().slice(0,16).replace('T',' ')}
+function fiyat(x){return x==null?'—':(x>=100?x.toLocaleString('tr-TR',{maximumFractionDigits:2}):x.toLocaleString('tr-TR',{maximumFractionDigits:5}))}
+if(!/^[A-Z0-9]+_[0-9]+m$/.test(S)){hata('Geçersiz adres.');return}
+if(typeof LightweightCharts==='undefined'){hata('Grafik kütüphanesi yüklenemedi (cikti/statik klasörü eksik). Raporu yeniden üret.');return}
+var sc=document.createElement('script');sc.src='veri/'+S+'.js?'+Date.now();
+sc.onerror=function(){hata('Grafik verisi bulunamadı. Önce raporu üret: <span class="mono">python -m btc_tahmin rapor</span>')};
+sc.onload=function(){var D=(window.KR||{})[S];if(!D){hata('Veri okunamadı.');return}var R=D.kurallar[K];
+  if(!R){hata('Bu kural güncel raporda yok (kurallar her gün yeniden aranır). Panodan yeni bir kural seç.');return}ciz(D,R)};
+document.head.appendChild(sc);
+
+function ciz(D,R){
+  var up=R.yukselis, sinif=up?'iyi':'kotu', BOL=['Eğitim','Doğrulama','Test','ŞU AN'];
+  document.title=D.sembol.replace('USDT','')+' · '+R.hedef+' · Kural grafiği';
+  var O=R.olusumlar, biten=O.filter(function(o){return o[2]>=0}), tut=biten.filter(function(o){return o[2]===1});
+  function oran(a){var t=a.filter(function(o){return o[2]===1}).length;return a.length?(100*t/a.length).toFixed(0)+'%':'—'}
+  function ort(a){if(!a.length)return '—';var s=0;a.forEach(function(o){s+=o[5]});return (s/a.length>=0?'+':'')+(s/a.length).toFixed(2)+'%'}
+  var tutmayan=biten.filter(function(o){return o[2]===0}), aktif=O.some(function(o){return o[1]===3});
+  var cips=R.kosullar.map(function(k){return '<span class="cip '+k.egilim+'" title="'+esc(k.aciklama)+'">'+esc(k.etiket)+'</span>'}).join('');
+  $('icerik').innerHTML=
+   '<div class="kart bolum"><div class="kart-baslik"><span>'+esc(D.sembol)+' · '+esc(D.aralik)+' · kural grafiği</span><a href="rapor.html" class="kucuk">← Panoya dön</a></div>'+
+   '<div class="kural-ust"><span class="rozet '+sinif+'">'+(up?'▲ ':'▼ ')+esc(R.hedef)+'</span><span class="kural-yuzde '+sinif+'">%'+Math.round(R.tutarlilik*100)+'</span>'+
+   '<span class="kucuk">test tutarlılığı · '+R.kosullar.length+' koşul'+(aktif?' · <b class="altin">ŞU AN AKTİF</b>':'')+'</span></div>'+
+   '<div style="margin-top:6px">'+cips+'</div>'+
+   '<p class="satir-not">Aşağıdaki grafikte bu koşulların <b>tüm geçmişte</b> aynı anda oluştuğu her an işaretli. '+
+   '<span class="iyi">Yeşil ok</span> = tuttu, <span class="kotu">kırmızı daire</span> = tutmadı, <span class="altin">altın</span> = şu an aktif (sonuç bekleniyor). '+
+   (R.blok>1?'Birbirine '+R.blok+' mumdan yakın tekrarlar tek sayılır (aynı mumları paylaştıkları için).':'')+' Saatler TSİ.</p></div>'+
+   '<div class="izgara-4 kpi-4">'+
+    kpi('Tüm zamanlar',tut.length+' / '+biten.length,'isabet '+oran(biten))+
+    kpi('Eğitim · doğrulama',oran(biten.filter(function(o){return o[1]===0}))+' · '+oran(biten.filter(function(o){return o[1]===1})),'kuralın bulunduğu ve elendiği dönemler')+
+    kpi('Test (hiç görülmemiş)',oran(biten.filter(function(o){return o[1]===2})),'n = '+biten.filter(function(o){return o[1]===2}).length+' · normal oran %'+Math.round(R.taban_oran*100))+
+    kpi('Ortalama hareket',ort(tut)+' / '+ort(tutmayan),'tuttuğunda / tutmadığında (çıkış fiyatına kadar)')+
+   '</div>'+
+   '<div class="kart bolum"><div class="kart-baslik"><span>Mum grafiği · tüm oluşumlar</span>'+
+   '<div class="filtre" id="filtre"><button data-f="hepsi" aria-pressed="true">Tümü</button><button data-f="test">Sadece test</button>'+
+   '<button data-f="tuttu">Tuttu</button><button data-f="tutmadi">Tutmadı</button></div></div>'+
+   '<div id="grafik" class="grafik-kutu"></div><p class="cok-kucuk">Tekerlekle yakınlaş, sürükleyerek kaydır. Tablodaki bir satıra tıklayınca grafik o ana gider.</p></div>'+
+   '<div class="kart bolum"><div class="kart-baslik"><span>Zaman içinde isabet · birikimli</span></div>'+
+   '<div id="grafik2" class="grafik-kucuk"></div><p class="cok-kucuk">Çizgi yatay ve yüksek kalıyorsa kural her dönemde tutmuş demektir. Sona doğru düşüyorsa kural zayıflıyor olabilir. Kesikli çizgi: normal (rastgele) oran.</p></div>'+
+   '<div class="kart bolum"><div class="kart-baslik"><span>Tüm oluşumlar ('+O.length+') · en yeni üstte</span></div><div class="tablo-sar" style="max-height:460px;overflow-y:auto"><table><thead><tr>'+
+   '<th>Tarih (TSİ)</th><th>Dönem</th><th class="sayi">Giriş</th><th class="sayi">Çıkış</th><th class="sayi">Değişim</th><th>Sonuç</th></tr></thead><tbody id="tablo"></tbody></table></div></div>';
+
+  var renk={yazi:'#8b97a9',cizgi:'rgba(148,163,184,.08)',kenar:'rgba(148,163,184,.22)'};
+  var ortak={layout:{background:{type:'solid',color:'transparent'},textColor:renk.yazi,fontFamily:'JetBrains Mono, monospace'},
+    grid:{vertLines:{color:renk.cizgi},horzLines:{color:renk.cizgi}},rightPriceScale:{borderColor:renk.kenar},
+    timeScale:{borderColor:renk.kenar,timeVisible:true,secondsVisible:false},crosshair:{mode:0},autoSize:true,
+    localization:{locale:'tr-TR',dateFormat:'dd.MM.yy'}};
+  var ch=LightweightCharts.createChart($('grafik'),ortak);
+  var mum=ch.addCandlestickSeries({upColor:'#16c784',downColor:'#ea3943',borderVisible:false,wickUpColor:'#16c784',wickDownColor:'#ea3943'});
+  var zam=D.mumlar.map(function(m){return m[0]});
+  mum.setData(D.mumlar.map(function(m){return {time:m[0]+OFS,open:m[1],high:m[2],low:m[3],close:m[4]}}));
+  function isaret(f){var L=O.filter(function(o){return f==='hepsi'||(f==='test'&&o[1]>=2)||(f==='tuttu'&&o[2]===1)||(f==='tutmadi'&&o[2]===0)});
+    mum.setMarkers(L.map(function(o){var bek=o[2]<0;return {time:o[0]+OFS,position:up?'belowBar':'aboveBar',
+      color:bek?'#f3d778':(o[2]===1?'#16c784':'#ea3943'),shape:bek?'square':(o[2]===1?(up?'arrowUp':'arrowDown'):'circle'),
+      text:bek?'ŞİMDİ':''}}))}
+  isaret('hepsi');
+  function git(t){var lo=0,hi=zam.length-1;while(lo<hi){var m=(lo+hi)>>1;if(zam[m]<t)lo=m+1;else hi=m}
+    ch.timeScale().setVisibleLogicalRange({from:lo-70,to:lo+40});window.scrollTo({top:$('grafik').getBoundingClientRect().top+scrollY-120,behavior:'smooth'})}
+  if(O.length){var t0=O[O.length-1][0],lo=0,hi=zam.length-1;while(lo<hi){var m=(lo+hi)>>1;if(zam[m]<t0)lo=m+1;else hi=m}
+    ch.timeScale().setVisibleLogicalRange({from:lo-70,to:lo+40})}
+  document.querySelectorAll('#filtre button').forEach(function(b){b.addEventListener('click',function(){
+    document.querySelectorAll('#filtre button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});isaret(b.dataset.f)})});
+
+  var ch2=LightweightCharts.createChart($('grafik2'),ortak), taban=R.taban_oran*100,
+    cizgi=ch2.addLineSeries({color:'#f3d778',lineWidth:2,priceFormat:{type:'percent'},
+      autoscaleInfoProvider:function(f){var r=f();if(!r)return r;r.priceRange.minValue=Math.min(r.priceRange.minValue,taban-5);r.priceRange.maxValue=Math.max(r.priceRange.maxValue,100);return r}});
+  var h=0,n=0,nokta=[];biten.forEach(function(o){n++;h+=o[2];nokta.push({time:o[0]+OFS,value:100*h/n})});
+  var tekil=[];nokta.forEach(function(p){if(tekil.length&&tekil[tekil.length-1].time===p.time)tekil[tekil.length-1]=p;else tekil.push(p)});
+  cizgi.setData(tekil);cizgi.createPriceLine({price:R.taban_oran*100,color:'#8b97a9',lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'normal'});
+  ch2.timeScale().fitContent();
+
+  var satir=O.slice().reverse().map(function(o){var s=o[2]<0?'<span class="rozet altin">BEKLENİYOR</span>':(o[2]===1?'<span class="rozet iyi">✓ TUTTU</span>':'<span class="rozet kotu">✕ TUTMADI</span>');
+    var d=o[5]==null?'—':'<span class="'+(o[5]>=0?'iyi':'kotu')+'">'+(o[5]>=0?'+':'')+o[5].toFixed(2)+'%</span>';
+    return '<tr class="tik" data-t="'+o[0]+'"><td class="mono">'+tarih(o[0])+'</td><td>'+BOL[o[1]]+'</td><td class="sayi mono">'+fiyat(o[3])+'</td><td class="sayi mono">'+fiyat(o[4])+'</td><td class="sayi mono">'+d+'</td><td>'+s+'</td></tr>'}).join('');
+  $('tablo').innerHTML=satir;
+  $('tablo').addEventListener('click',function(e){var tr=e.target.closest('tr');if(!tr)return;
+    document.querySelectorAll('#tablo tr.secili').forEach(function(x){x.classList.remove('secili')});tr.classList.add('secili');git(+tr.dataset.t)});
+}
+function kpi(e,d,a){return '<div class="kart"><div class="kart-baslik"><span>'+e+'</span></div><div class="dev" style="font-size:30px">'+d+'</div><div class="kucuk">'+a+'</div></div>'}
+})();
+"""
+
+
+def grafik_html() -> str:
+    govde = ('<main id="icerik"><div class="kart"><p class="kucuk">Grafik yükleniyor…</p></div></main>'
+             '<script src="statik/lightweight-charts.standalone.production.js"></script>'
+             f'<script>{GRAFIK_JS}</script>'
+             '<footer>Grafik: TradingView Lightweight Charts™ (Apache 2.0). Geçmiş isabet geleceğin garantisi değildir.</footer>')
+    return _iskelet("Kural Grafiği · Kripto Risk Terminali", "grafik.html", govde)

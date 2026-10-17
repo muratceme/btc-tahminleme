@@ -11,6 +11,7 @@ Raporlanan tutarlılık daima TEST dönemindeki isabet oranıdır.
 """
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass, field
 
@@ -46,7 +47,31 @@ def binom_p(basari: int, n: int, p0: float) -> float:
 
 
 def aile(kosul: str) -> str:
-    return kosul.split(":", 1)[0]
+    """Koşulun ait olduğu gösterge. İnce eşikli koşullar ("RSI~:35-40") ana göstergeyle aynı ailedir."""
+    return kosul.split(":", 1)[0].rstrip("~")
+
+
+def kural_id(hedef: str, yon: int, kosullar) -> str:
+    return hashlib.md5(f"{hedef}|{yon}|{'&'.join(sorted(kosullar))}".encode()).hexdigest()[:10]
+
+
+def ayristir(idx: np.ndarray, gun=None, blok: int = 1) -> np.ndarray:
+    """Birbirine bağımlı tekrarları ayıklar.
+    gun verilirse her günün ilk sinyali; blok > 1 ise birbirinden en az `blok` mum uzak sinyaller kalır
+    (ör. '3 mum sonra' hedefinde art arda 3 sinyal aynı mumları paylaşır)."""
+    if len(idx) == 0:
+        return idx
+    if gun is not None:
+        _, ilk = np.unique(gun[idx], return_index=True)
+        return idx[np.sort(ilk)]
+    if blok <= 1:
+        return idx
+    kalan, son = [], -10**9
+    for i in idx:
+        if i - son >= blok:
+            kalan.append(i)
+            son = i
+    return np.asarray(kalan, dtype=idx.dtype)
 
 
 @dataclass
@@ -71,6 +96,7 @@ class Kural:
         def o(t):
             return round(t[1] / t[0], 4) if t[0] else None
         return {
+            "id": kural_id(self.hedef, self.yon, self.kosullar),
             "kosullar": list(self.kosullar),
             "hedef": self.hedef,
             "yon": "YESIL/YUKARI" if self.yon == 1 else "KIRMIZI/ASAGI",
@@ -103,7 +129,8 @@ class _Bolum:
 def kurallari_ara(K: pd.DataFrame, y: pd.Series, hedef_adi: str, gun: pd.Series | None = None,
                   max_kosul: int = config.MAX_KOSUL, beam: int = config.BEAM_GENISLIK,
                   min_destek: int = config.MIN_DESTEK_EGITIM, min_test: int = config.MIN_DESTEK_TEST,
-                  min_tutarlilik: float = config.MIN_TUTARLILIK) -> list[Kural]:
+                  min_tutarlilik: float = config.MIN_TUTARLILIK, blok: int = 1, yonler=(1, 0),
+                  min_kosul: int = 1, esikler: tuple[int, int, int] | None = None) -> list[Kural]:
     gecerli = y.notna().to_numpy()
     Kv = K.to_numpy()[gecerli]
     yv = y.to_numpy()[gecerli].astype(int)
@@ -128,6 +155,8 @@ def kurallari_ara(K: pd.DataFrame, y: pd.Series, hedef_adi: str, gun: pd.Series 
         return wilson_alt(h, s)
 
     for yon, hy, taban in ((1, h1, taban1), (0, h0, 1 - taban1)):
+        if yon not in yonler:
+            continue
         seviye = []
         for j in range(m):
             if sup[j] >= min_destek:
@@ -168,22 +197,26 @@ def kurallari_ara(K: pd.DataFrame, y: pd.Series, hedef_adi: str, gun: pd.Series 
         return mk
 
     def istatistik(b: _Bolum, kom, yon, a, z):
-        """(n, isabet). Gün sonu hedefinde her günün sadece İLK sinyali sayılır:
-        aynı günün mumları aynı sonucu paylaştığı için bağımsız örnek değildir."""
+        """(n, isabet). Bağımsız olmayan tekrarlar ayıklanır (bkz. ayristir):
+        gün sonu hedefinde her günün ilk sinyali, N mumluk hedefte birbirinden N mum uzak sinyaller."""
         mk = maske_olustur(b, kom)
-        if gun_v is None:
+        if gun_v is None and blok <= 1:
             n_, h1_, h0_ = b.say(mk)
             return n_, (h1_ if yon == 1 else h0_)
-        idx = np.nonzero(np.unpackbits(mk)[:b.n])[0]
-        _, ilk = np.unique(gun_v[a:z][idx], return_index=True)
-        sec = yv[a:z][idx[ilk]]
+        idx = ayristir(np.nonzero(np.unpackbits(mk)[:b.n])[0], None if gun_v is None else gun_v[a:z], blok)
+        sec = yv[a:z][idx]
         return len(sec), int((sec == yon).sum())
 
     # Gün sonu hedefinde örnekler "gün" olduğundan eşikler gün sayısına göre
-    min_e, min_d, min_t = (min_destek, max(5, min_test // 2), min_test) if gun_v is None else (25, 12, 20)
+    if esikler is not None:
+        min_e, min_d, min_t = esikler
+    else:
+        min_e, min_d, min_t = (min_destek, max(5, min_test // 2), min_test) if gun_v is None else (25, 12, 20)
     son_satir = K.iloc[-1].to_numpy()
     sonuc: list[Kural] = []
     for (kom, yon) in adaylar:
+        if len(kom) < min_kosul:
+            continue
         ne, e_h = istatistik(egt, kom, yon, 0, s1)
         if ne < min_e or e_h / ne < min_tutarlilik:
             continue

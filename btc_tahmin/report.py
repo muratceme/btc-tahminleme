@@ -66,6 +66,15 @@ def terminal(rapor: dict) -> str:
                          + " + ".join(r["kosullar"]))
         else:
             s.append(f"  {GRI}Sonraki mum için şu an aktif tutarlı kombinasyon yok.{SIFIR}")
+        derin = c.get("derin", {}).get("aktif", [])
+        if derin:
+            from .aciklama import hedef_metni, kosul_bilgisi
+            s.append(f"  {KALIN}DERİN TARAMA (%85+) · şu an aktif:{SIFIR}")
+            for r in derin[:6]:
+                yuk, metin = hedef_metni(r["hedef"], 1 if r["yon"].startswith("YESIL") else 0, c["aralik"])
+                renk = YESIL if yuk else KIRMIZI
+                s.append(f"   {renk}%{r['tutarlilik']*100:.0f} {metin}{SIFIR} (test n={r['test_n']}): "
+                         + " + ".join(kosul_bilgisi(k)["etiket"] for k in r["kosullar"]))
     s.append("")
     s.append(f"{GRI}{rapor['uyari']}{SIFIR}")
     s.append(f"Pano: {config.CIKTI_DIR / 'rapor.html'}")
@@ -74,8 +83,16 @@ def terminal(rapor: dict) -> str:
 
 def kaydet(rapor: dict, yenile_sn: int | None = None):
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
-    from .pano import nasil_calisir_html, pano_html
+    import shutil
+    from pathlib import Path
+
+    from .pano import grafik_html, nasil_calisir_html, pano_html
     (config.CIKTI_DIR / "nasil-calisir.html").write_text(nasil_calisir_html(), encoding="utf-8")
+    (config.CIKTI_DIR / "grafik.html").write_text(grafik_html(), encoding="utf-8")
+    statik = config.CIKTI_DIR / "statik"
+    statik.mkdir(exist_ok=True)
+    for f in (Path(__file__).parent / "statik").iterdir():
+        shutil.copy2(f, statik / f.name)
     yol = config.CIKTI_DIR / "rapor.html"
     yol.write_text(pano_html(rapor, yenile_sn), encoding="utf-8")
     return yol

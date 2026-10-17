@@ -91,6 +91,42 @@ def kosullar(o: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _ince_bant(s: pd.Series, aile: str, sinirlar: list[float]) -> dict:
+    """Sayısal değeri dar aralıklara böler: RSI~:35-40 gibi."""
+    def f(x):
+        return f"{x:g}"
+    etiketler = [f"<{f(sinirlar[0])}"] + [f"{f(a)}..{f(b)}" for a, b in zip(sinirlar[:-1], sinirlar[1:])] + [f">{f(sinirlar[-1])}"]
+    kat = pd.cut(s, [-np.inf] + sinirlar + [np.inf], labels=etiketler)
+    return {f"{aile}~:{e}": (kat == e) for e in etiketler}
+
+
+INCE_BANTLAR = {
+    # aile: (sütun hesaplayıcı, sınırlar)
+    "RSI": (lambda o: o["rsi"], list(range(20, 81, 5))),
+    "STOCH": (lambda o: o["stoch_k"], list(range(10, 91, 10))),
+    "STOCHRSI": (lambda o: o["srsi_k"], list(range(10, 91, 10))),
+    "MFI": (lambda o: o["mfi"], list(range(10, 91, 10))),
+    "CCI": (lambda o: o["cci"], list(range(-200, 201, 50))),
+    "WILLIAMS_R": (lambda o: o["willr"], list(range(-90, -9, 10))),
+    "ADX": (lambda o: o["adx"], list(range(10, 51, 5))),
+    "BOLLINGER": (lambda o: o["bb_pct"], [-0.2, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.2]),
+    "MACD_GUC": (lambda o: o["macd_hist"] / o["atr"], [-1, -0.5, -0.2, 0, 0.2, 0.5, 1]),
+    "EMA21_UZAKLIK": (lambda o: (o["close"] / o["ema21"] - 1) * 100, [-2, -1, -0.5, -0.2, 0, 0.2, 0.5, 1, 2]),
+    "VWAP": (lambda o: o["vwap_sapma"], [-1, -0.5, -0.25, 0, 0.25, 0.5, 1]),
+    "MOMENTUM_4S": (lambda o: o["roc_16"], [-3, -2, -1, -0.5, 0, 0.5, 1, 2, 3]),
+    "HACIM": (lambda o: o["hacim_z"], [-1, -0.5, 0, 0.5, 1, 2, 3]),
+    "ALICI_BASKISI": (lambda o: o["alis_orani"], [0.4, 0.45, 0.5, 0.55, 0.6]),
+}
+
+
+def ince_kosullar(o: pd.DataFrame) -> pd.DataFrame:
+    """Derin tarama için ince eşikli koşullar ("RSI 35-40 arası", "CCI -150..-100 arası" ...)."""
+    k: dict[str, pd.Series] = {}
+    for aile, (fn, sinirlar) in INCE_BANTLAR.items():
+        k.update(_ince_bant(fn(o), aile, sinirlar))
+    return pd.DataFrame(k).fillna(False).astype(bool)
+
+
 def ust_zaman_dilimi(df: pd.DataFrame, kural: str, etiket: str) -> pd.DataFrame:
     """1s / 4s trendini hesaplar ve geleceğe bakmadan 15m'ye taşır."""
     g = df.set_index("time").resample(kural, label="left", closed="left").agg(
@@ -178,6 +214,21 @@ def veri_seti_hazirla(mumlar: dict[str, pd.DataFrame], ana: str = config.ANA_SEM
     ters_min = o["low"][::-1].groupby(gun[::-1]).cummin()[::-1]
     sonraki_min = ters_min.groupby(gun).shift(-1)
     hedef["gun_ici_max_dusus"] = ((sonraki_min / o["close"] - 1) * 100).where(gs.notna())
+
+    # Çok mumlu hedefler (derin tarama): N mum sonra fiyat, sonraki N mumun hepsi aynı renk
+    c = o["close"]
+    for n in config.ILERI_MUMLAR:
+        ileri = c.shift(-n)
+        hedef[f"ileri_{n}"] = (ileri > c).astype(float).where(ileri.notna())
+        hedef[f"ileri_{n}_fiyat"] = ileri
+    yesil = (o["close"] > o["open"]).astype(float)
+    kirmizi = (o["close"] < o["open"]).astype(float)
+    for n in config.SERI_MUMLAR:
+        gy = sum(yesil.shift(-i) for i in range(1, n + 1))
+        gk = sum(kirmizi.shift(-i) for i in range(1, n + 1))
+        hedef[f"seri_{n}_yesil"] = (gy == n).astype(float).where(gy.notna())
+        hedef[f"seri_{n}_kirmizi"] = (gk == n).astype(float).where(gk.notna())
+    hedef["gun_sonu_fiyat"] = gs
 
     # ısınma dönemi (EMA200 vb.) dışarı
     gecerli = o.index >= 250

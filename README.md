@@ -44,7 +44,7 @@ Bilgisayar açık ve pencere açık olduğu sürece pano güncel kalır.
 formatında özetlenir. Sürekli takip için: `/loop 15m /btc-rapor hizli`. Kırım eklemek için:
 `/btc-rapor kirim: Fed belirsizliği 5`.
 
-İlk çalıştırma yaklaşık 540 günlük veri indirir ve kural madenciliği yapar. Bu birkaç dakika sürebilir.
+İlk çalıştırma yaklaşık 540 günlük veri indirir ve kural madenciliği yapar (derin tarama dahil coin başına ~1-2 dk). Toplam 5-10 dakika sürebilir.
 Sonraki çalıştırmalar sadece yeni mumları indirir.
 
 ## Çıktılar (`cikti/`)
@@ -52,6 +52,11 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
 - `rapor.html`: Bloomberg terminali tarzı koyu pano. Kayan fiyat/dominans/haber şeridi, CANLI göstergesi, coin sekmeleri,
   yarım daire risk göstergesi ve karar etiketi, "bu risk neye dayanıyor" açıklaması, risk tablosu (her satırın düz Türkçe anlamıyla),
   aktif kombinasyon kartları, sinyal haritası (şu an doğru olan tüm koşullar gruplu ve renkli)
+- **Derin tarama (%85+):** 3-7 indikatörün ince eşiklerle (RSI 35-40, CCI −150..−100 …) aynı anda oluştuğu kombinasyonlar.
+  Hedefler: sonraki mum, 2/3/4/8 mum sonra fiyat yönü, sonraki 2-3 mumun hepsi yeşil/kırmızı. Sadece hiç görülmemiş test
+  döneminde %85 ve üzeri tutanlar gösterilir.
+- `grafik.html`: Her kuralın **📈 Grafikte incele** butonu. Mum grafiğinde kuralın tüm geçmiş oluşumları (tuttu / tutmadı / şu an),
+  dönem dönem isabet, birikimli isabet çizgisi ve tıklanabilir oluşum tablosu. Grafik: TradingView Lightweight Charts (Apache 2.0, repoya gömülü)
 - `nasil-calisir.html`: Her şeyin nasıl hesaplandığını anlatan rehber: veriler, tüm indikatör ve formasyonlar, kombinasyon arama,
   tutarlılık ölçümü, risk türleri, kırım tablosu, dominans okuma, örnekli okuma rehberi, sözlük. Panodaki `?` işaretleri buraya götürür
 - `rapor.json`: tüm sayılar (başka araçlara bağlamak için)

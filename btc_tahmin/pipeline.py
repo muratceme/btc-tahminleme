@@ -5,10 +5,11 @@ import json
 import string
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 
 from . import config, market, miner, models
-from .features import gun_sonuna_kalan_saat, veri_seti_hazirla
+from .features import gun_sonuna_kalan_saat, ince_kosullar, veri_seti_hazirla
 
 
 def _gun_serisi(o: pd.DataFrame) -> pd.Series:
@@ -19,13 +20,17 @@ def _kural_onbellek(sembol, aralik):
     return config.CIKTI_DIR / f"kurallar_{sembol}_{aralik}.json"
 
 
-def kurallari_getir(sembol, aralik, o, K, hedef, hizli: bool) -> dict[str, list[dict]]:
+KURAL_SURUM = 2   # önbellek biçimi değişince eski önbellek yok sayılır
+
+
+def kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli: bool) -> dict[str, list[dict]]:
+    """K: standart koşullar, KT: K + ince eşikli koşullar (derin tarama için)."""
     dosya = _kural_onbellek(sembol, aralik)
     if hizli and dosya.exists():
         kayit = json.loads(dosya.read_text(encoding="utf-8"))
         yas = datetime.now(timezone.utc) - datetime.fromisoformat(kayit["zaman"])
-        if yas.total_seconds() < 24 * 3600:
-            son = K.iloc[-1]
+        if kayit.get("surum") == KURAL_SURUM and yas.total_seconds() < 24 * 3600:
+            son = KT.iloc[-1]
             for liste in kayit["kurallar"].values():
                 for r in liste:
                     r["aktif_su_an"] = bool(all(son.get(k, False) for k in r["kosullar"]))
@@ -34,13 +39,91 @@ def kurallari_getir(sembol, aralik, o, K, hedef, hizli: bool) -> dict[str, list[
     kurallar = {
         "sonraki_mum": [r.sozluk() for r in miner.kurallari_ara(K, hedef["sonraki_yesil"], "sonraki_mum")],
         "gun_sonu": [r.sozluk() for r in miner.kurallari_ara(K, hedef["gun_sonu_yukari"], "gun_sonu", gun=gun)],
+        "derin": derin_tarama(KT, hedef),
     }
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
-    dosya.write_text(json.dumps({"zaman": datetime.now(timezone.utc).isoformat(), "kurallar": kurallar},
-                                ensure_ascii=False, indent=1), encoding="utf-8")
-    pd.DataFrame(kurallar["sonraki_mum"] + kurallar["gun_sonu"]).to_csv(
+    dosya.write_text(json.dumps({"zaman": datetime.now(timezone.utc).isoformat(), "surum": KURAL_SURUM,
+                                 "kurallar": kurallar}, ensure_ascii=False, indent=1), encoding="utf-8")
+    pd.DataFrame(kurallar["sonraki_mum"] + kurallar["gun_sonu"] + kurallar["derin"]).to_csv(
         config.CIKTI_DIR / f"kurallar_{sembol}_{aralik}.csv", index=False)
     return kurallar
+
+
+def derin_tarama(KT: pd.DataFrame, hedef: pd.DataFrame) -> list[dict]:
+    """3-7 koşullu, ince eşikli kombinasyonlar; sadece TEST döneminde %85+ tutanlar."""
+    sonuc = []
+    for kolon, blok, yonler in config.DERIN_HEDEFLER:
+        bulunan = miner.kurallari_ara(
+            KT, hedef[kolon], kolon, max_kosul=config.DERIN_MAX_KOSUL, beam=config.DERIN_BEAM,
+            min_destek=config.DERIN_ESIKLER[0], min_tutarlilik=config.DERIN_MIN_TUTARLILIK, blok=blok,
+            yonler=yonler, min_kosul=config.DERIN_MIN_KOSUL, esikler=config.DERIN_ESIKLER)
+        sonuc.extend(r.sozluk() for r in bulunan)
+    sonuc.sort(key=lambda r: (-miner.wilson_alt(r["tutarlilik"] * r["test_n"], r["test_n"]), -r["test_n"]))
+    return sonuc
+
+
+def _hedef_tanimi(hedef_adi: str, o: pd.DataFrame, hedef: pd.DataFrame):
+    """(hedef serisi, bağımsızlık bloğu, gün serisi ya da None, çıkış fiyatı serisi)"""
+    c = o["close"]
+    if hedef_adi in ("sonraki_mum", "sonraki_yesil"):
+        return hedef["sonraki_yesil"], 1, None, c.shift(-1)
+    if hedef_adi == "gun_sonu":
+        return hedef["gun_sonu_yukari"], 1, _gun_serisi(o), hedef["gun_sonu_fiyat"]
+    n = int(hedef_adi.split("_")[1])
+    return hedef[hedef_adi], n, None, c.shift(-n)
+
+
+def grafik_verisi_yaz(sembol: str, aralik: str, o: pd.DataFrame, KT: pd.DataFrame, hedef: pd.DataFrame,
+                      kurallar: dict[str, list[dict]]):
+    """Grafik sayfası için mumlar + her kuralın geçmişteki tüm oluşumları (cikti/veri/<sembol>_<aralik>.js).
+
+    JS dosyası olarak yazılır ki tarayıcı dosyayı doğrudan (file://) açsa bile yüklenebilsin."""
+    from .aciklama import hedef_metni, kosul_bilgisi
+    # pandas sürümüne göre iç çözünürlük ns ya da µs olabilir; saniyeyi farktan hesapla
+    zaman = ((o["time"] - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1)).to_numpy()
+    def yuv(x):
+        return float(f"{x:.6g}")
+    mumlar = [[int(t), yuv(a), yuv(b), yuv(c), yuv(d)] for t, a, b, c, d in
+              zip(zaman, o["open"], o["high"], o["low"], o["close"])]
+    detay = {}
+    # Sadece panoda gösterilen kurallar: her listeden en iyi 20 + şu an aktif olanlar
+    tum = [r for liste in kurallar.values() for i, r in enumerate(liste) if i < 20 or r["aktif_su_an"]]
+    for r in tum:
+        if r["id"] in detay or not all(k in KT.columns for k in r["kosullar"]):
+            continue
+        y, blok, gun, cikis = _hedef_tanimi(r["hedef"], o, hedef)
+        yon = 1 if r["yon"].startswith("YESIL") else 0
+        maske = KT[r["kosullar"]].all(axis=1).to_numpy()
+        gecerli = y.notna().to_numpy()
+        V = np.nonzero(gecerli)[0]
+        s1 = int(len(V) * config.EGITIM_ORANI)
+        s2 = int(len(V) * (config.EGITIM_ORANI + config.DOGRULAMA_ORANI))
+        idx = miner.ayristir(np.nonzero(maske & gecerli)[0], None if gun is None else gun.to_numpy(), blok)
+        olusum = []
+        yv, cv, ck = y.to_numpy(), o["close"].to_numpy(), cikis.to_numpy()
+        for i in idx:
+            sira = np.searchsorted(V, i)
+            bolum = 0 if sira < s1 else (1 if sira < s2 else 2)
+            olusum.append([int(zaman[i]), bolum, int(yv[i] == yon), yuv(cv[i]), yuv(ck[i]),
+                           round(float((ck[i] / cv[i] - 1) * 100), 3)])
+        if maske[-1]:   # şu an aktif: sonucu henüz belli değil
+            olusum.append([int(zaman[-1]), 3, -1, yuv(cv[-1]), None, None])
+        yukselis, metin = hedef_metni(r["hedef"], yon, aralik)
+        detay[r["id"]] = {
+            "kosullar": [kosul_bilgisi(k) | {"ham": k} for k in r["kosullar"]],
+            "hedef": metin, "yukselis": yukselis, "blok": blok,
+            "tutarlilik": r["tutarlilik"], "test_n": r["test_n"], "egitim_oran": r["egitim_oran"],
+            "dogrulama_oran": r["dogrulama_oran"], "taban_oran": r["taban_oran"], "p_deger": r["p_deger"],
+            "kaldirac_lift": r["kaldirac_lift"], "olusumlar": olusum,
+        }
+    veri = {"sembol": sembol, "aralik": aralik, "mumlar": mumlar, "kurallar": detay,
+            "olusturma": datetime.now(timezone.utc).isoformat()}
+    hedef_dir = config.CIKTI_DIR / "veri"
+    hedef_dir.mkdir(parents=True, exist_ok=True)
+    anahtar = f"{sembol}_{aralik}"
+    (hedef_dir / f"{anahtar}.js").write_text(
+        f"window.KR=window.KR||{{}};window.KR[{json.dumps(anahtar)}]=" + json.dumps(veri, ensure_ascii=False, separators=(",", ":")) + ";",
+        encoding="utf-8")
 
 
 def risk_tablosu(yon_satirlari, kurallar_gs, dusus_satirlari, kirim) -> dict:
@@ -105,7 +188,9 @@ def _degisim_24s(o: pd.DataFrame):
 
 def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: bool) -> dict:
     o, K, hedef = veri_seti_hazirla(mumlar, ana=sembol)
-    kurallar = kurallari_getir(sembol, aralik, o, K, hedef, hizli)
+    KT = pd.concat([K, ince_kosullar(o)], axis=1)
+    kurallar = kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli)
+    grafik_verisi_yaz(sembol, aralik, o, KT, hedef, kurallar)
     yon = models.yon_modelleri(o, hedef, "gun_sonu_yukari") + models.yon_modelleri(o, hedef, "sonraki_yesil")
     dusus = models.dusus_riski(o, hedef)
     tablo = risk_tablosu(yon, kurallar["gun_sonu"], dusus, kirim)
@@ -134,6 +219,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
             "aktif_kurallar": sonraki_aktif[:25],
             "ml": sonraki_ml,
         },
+        "derin": {"aktif": [r for r in kurallar["derin"] if r["aktif_su_an"]][:30]},
         "kural_kutuphanesi": {k: v[:60] for k, v in kurallar.items()},
         "kural_sayisi": {k: len(v) for k, v in kurallar.items()},
     }

@@ -7,7 +7,9 @@ tek bir yön kuralı veya model satırı bulursa, hesaplamada bir sızıntı var
 import numpy as np
 import pandas as pd
 
-from btc_tahmin import config, features, miner, models
+import time
+
+from btc_tahmin import config, features, miner, models, pipeline
 
 
 def rastgele_yuruyus(gun=540):
@@ -34,8 +36,14 @@ def main():
     r1 = miner.kurallari_ara(K, hd["sonraki_yesil"], "s")
     r2 = miner.kurallari_ara(K, hd["gun_sonu_yukari"], "g", gun=gun)
     m = [r for h in ("gun_sonu_yukari", "sonraki_yesil") for r in models.yon_modelleri(o, hd, h) if r["tur"] == "YON"]
-    print(f"rastgele veride bulunan: sonraki mum kuralı {len(r1)}, gün sonu kuralı {len(r2)}, model satırı {len(m)}")
-    assert not r1 and not r2 and not m, "SIZINTI: rastgele veride tutarlı sinyal bulundu"
+    t0 = time.time()
+    KT = pd.concat([K, features.ince_kosullar(o)], axis=1)
+    d = pipeline.derin_tarama(KT, hd)
+    print(f"rastgele veride bulunan: sonraki mum kuralı {len(r1)}, gün sonu kuralı {len(r2)}, model satırı {len(m)}, "
+          f"derin tarama kuralı {len(d)} (derin tarama {time.time() - t0:.0f} sn, {KT.shape[1]} koşul)")
+    for r in d[:5]:
+        print("  ", r["hedef"], r["tutarlilik"], r["test_n"], r["kosullar"])
+    assert not r1 and not r2 and not m and not d, "SIZINTI: rastgele veride tutarlı sinyal bulundu"
     print("OK - sızıntı yok")
 
 

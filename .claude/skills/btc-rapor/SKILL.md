@@ -41,6 +41,7 @@ Takvim olayı (FOMC, CPI vb.) eklemek için `takvim` listesine UTC tarihli kayı
    - Max düşüş sınırları (`ozet.max_dusus`): stop seviyesi önerisi olarak yorumla.
    - **Sonraki mum**: `sonraki_mum.aktif_kurallar` varsa en iyi 5'i şu formatta yaz:
      "RSI 30-45 + MACD negatif-artan + Supertrend boğa + ... iken sonraki mum testte %78 YEŞİL geldi (n=46)".
+   - **Derin tarama** (`derin.aktif`): %85+ tutarlılıklı, 3-7 koşullu kurallar. Varsa hedefi (ör. `ileri_3` = 3 mum sonra fiyat, `seri_3_yesil` = sonraki 3 mumun hepsi yeşil) ve koşulları düz Türkçe yaz; grafik için `cikti/grafik.html?s=<SEMBOL>_<aralik>&k=<id>` adresini ver.
 4. **Sonuç kutusu**: her coin için tek satır karar özeti — "Long için uygun / temkinli / uzak dur" (long risk <40 uygun, 40-60 temkinli, >60 uzak dur; test n küçükse bir kademe temkinli ol).
 5. Sonda HTML panonun yolunu ver: `cikti/rapor.html` (tarayıcıda açılabilir).
 

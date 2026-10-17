@@ -129,9 +129,51 @@ _COIN = {
 }
 
 
+INCE_ADLAR = {
+    "RSI": "RSI", "STOCH": "Stochastic", "STOCHRSI": "StochRSI", "MFI": "MFI", "CCI": "CCI",
+    "WILLIAMS_R": "Williams %R", "ADX": "ADX", "BOLLINGER": "Bollinger %B", "MACD_GUC": "MACD gücü (hist/ATR)",
+    "EMA21_UZAKLIK": "Fiyatın EMA21'e uzaklığı %", "VWAP": "VWAP sapması %", "MOMENTUM_4S": "Son 4 saat getirisi %",
+    "HACIM": "Hacim z-skoru", "ALICI_BASKISI": "Alıcı payı (taker)",
+}
+INCE_ACIKLAMA = {
+    "MACD_GUC": "MACD histogramının ATR'ye (ortalama mum boyuna) oranı. Pozitif ve büyükse yukarı momentum güçlü.",
+    "EMA21_UZAKLIK": "Fiyat 21 mumluk ortalamadan yüzde kaç uzakta. Çok uzaklaşınca ortalamaya dönüş olabilir.",
+}
+
+
+def _ince_etiket(durum: str) -> str:
+    if durum.startswith("<"):
+        return f"{durum[1:]} altında"
+    if durum.startswith(">"):
+        return f"{durum[1:]} üstünde"
+    return durum.replace("..", " ile ") + " arası"
+
+
+def hedef_metni(hedef: str, yon: int, aralik: str = "15m") -> tuple[bool, str]:
+    """(yükseliş mi, Türkçe açıklama)"""
+    dk = int(aralik.rstrip("m")) if aralik.endswith("m") else 15
+    if hedef in ("sonraki_mum", "sonraki_yesil"):
+        return yon == 1, f"sonraki {aralik} mum {'YEŞİL' if yon == 1 else 'KIRMIZI'}"
+    if hedef == "gun_sonu":
+        return yon == 1, f"gün sonu kapanışı şimdiden {'YUKARIDA' if yon == 1 else 'AŞAĞIDA'}"
+    parca = hedef.split("_")
+    n = int(parca[1])
+    sure = f"{n * dk} dk" if n * dk < 60 else f"{n * dk / 60:g} saat"
+    if parca[0] == "ileri":
+        return yon == 1, f"{n} mum sonra ({sure}) fiyat şimdiden {'YUKARIDA' if yon == 1 else 'AŞAĞIDA'}"
+    renk = parca[2]
+    return renk == "yesil", f"sonraki {n} mumun HEPSİ {'YEŞİL' if renk == 'yesil' else 'KIRMIZI'}"
+
+
 def kosul_bilgisi(kosul: str) -> dict:
     """{"etiket", "egilim", "grup", "aciklama"} döner. Tanınmayan koşul ham haliyle gelir."""
     aile, _, durum = kosul.partition(":")
+    if aile.endswith("~"):
+        a = aile[:-1]
+        ad = INCE_ADLAR.get(a, a)
+        ne = INCE_ACIKLAMA.get(a) or (AILELER[a][2] if a in AILELER else "")
+        grup = AILELER[a][0] if a in AILELER else "Momentum"
+        return {"etiket": f"{ad} {_ince_etiket(durum)}", "egilim": "notr", "grup": grup, "aciklama": ne}
     if aile in AILELER:
         grup, ad, ne, durumlar = AILELER[aile]
         et, eg = durumlar.get(durum, (f"{ad}: {durum}", "notr"))
