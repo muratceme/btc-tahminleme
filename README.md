@@ -109,5 +109,6 @@ tutarlılık seviyeleri (%90/85/80/75/70), gün sonu saat dilimi (TSİ).
 ## Test (ağ gerektirmez)
 
 ```bash
-python -m tests.sentetik_test
+python -m tests.sentetik_test   # uçtan uca çalışıyor mu?
+python -m tests.sizinti_test    # 540 günlük rastgele veride sahte sinyal çıkıyor mu? (0 olmalı)
 ```

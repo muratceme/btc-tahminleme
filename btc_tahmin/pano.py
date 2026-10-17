@@ -8,6 +8,7 @@ from __future__ import annotations
 import html
 import math
 
+from . import config
 from .aciklama import AILELER, FORMASYONLAR, GRUP_SIRASI, kosul_bilgisi
 
 CSS = """
@@ -247,6 +248,10 @@ def _dayanak_metni(c: dict) -> str:
     satir = c["risk"]["satirlar"]
     yon_sinyal = [s for s in satir if s["tur"].startswith("Yön") and s["sinyal_var"]]
     parca = []
+    kalan = c.get("gun_sonuna_kalan_saat")
+    if kalan is not None and kalan < config.GUN_SONU_MIN_KALAN_SAAT:
+        parca.append(f"<b>Gün sonuna {kalan * 60:.0f} dakika kaldı.</b> Bu kadar kısa sürede gün sonu tahmini anlamlı değil; "
+                     "yeni günün ilk mumlarını bekle. Sonraki mum kartları hâlâ geçerli.")
     if yon_sinyal:
         en = max(yon_sinyal, key=lambda s: s["tutarlilik"])
         parca.append(f"Şu an <b>{len(yon_sinyal)} tutarlı kaynak</b> sinyal veriyor. Gün sonu long riski bunların "
@@ -616,7 +621,7 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <li><span><b>Doğrulama:</b> Adaylar burada elenir. Sadece eğitim verisine “ezber” yapan kurallar burada düşer.</span></li>
 <li><span><b>Test:</b> Hiç dokunulmamış son dönem. Panoda gördüğün <b>tutarlılık her zaman bu dönemdeki isabet oranıdır.</b> %70 altındaki hiçbir şey gösterilmez.</span></li>
 </ul>
-<p><b>Gün sonu hedefinde özel kural:</b> Aynı günün 15m mumlarının hepsi aynı gün sonu kapanışına bakar. Bu yüzden 30 mumu 30 ayrı örnek saymak oranı yapay olarak şişirir. Sistem her günden yalnızca <b>ilk sinyali</b> sayar; test n = farklı gün sayısıdır. En az 20 farklı gün gerekir.</p>
+<p><b>Gün sonu hedefinde özel kural:</b> Aynı günün 15m mumlarının hepsi aynı gün sonu kapanışına bakar. Bu yüzden 30 mumu 30 ayrı örnek saymak oranı yapay olarak şişirir. Sistem her günden yalnızca <b>ilk sinyali</b> sayar; test n = farklı gün sayısıdır. En az 20 farklı gün gerekir. Gün sonuna 1 saatten az kalmış mumlar gün sonu hesabına hiç girmez; çünkü günün son mumunda “gün sonu” o mumun kendisidir ve sonuç önceden bellidir. Bu kural olmasaydı model bunu ezberleyip sahte %95+ isabet gösterirdi.</p>
 <p><b>Yapay zekâ modellerinde:</b> Model önce geçmişin %40'ıyla eğitilir, sonraki dilimi tahmin eder. Sonra pencere ileri kayar (walk-forward). Güven eşiği ilk dilimlerde seçilir, tutarlılık en son dilimde ölçülür.</p>
 <p><b>Sağlama:</b> Sistem tamamen rastgele üretilmiş sahte fiyat verisiyle test edildi ve <b>sıfır</b> kural buldu; yapay zekâ isabeti %50'de kaldı. Yani rastgelelikten sahte formasyon üretmiyor ve geleceğe bakmıyor.</p>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """

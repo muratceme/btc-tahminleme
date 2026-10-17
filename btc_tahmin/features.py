@@ -138,6 +138,18 @@ def gun_sonu_kapanis(df: pd.DataFrame) -> pd.Series:
     return son.where(~son_gun)
 
 
+def mum_suresi(df: pd.DataFrame) -> pd.Timedelta:
+    return df["time"].diff().median() if len(df) > 1 else pd.Timedelta("15min")
+
+
+def gun_sonuna_kalan_saat(df: pd.DataFrame) -> pd.Series:
+    """Mum kapandıktan (karar anından) sonra TSİ gün sonuna kalan saat."""
+    kapanis = df["time"] + mum_suresi(df) + pd.Timedelta(hours=config.GUN_SONU_UTC_OFFSET_SAAT)
+    gece = kapanis.dt.floor("D")
+    kalan = (gece + pd.Timedelta(days=1) - kapanis).dt.total_seconds() / 3600
+    return kalan.where(kalan < 24, 0.0)   # tam gece yarısı kapanan mum: gün bitti
+
+
 def veri_seti_hazirla(mumlar: dict[str, pd.DataFrame], ana: str = config.ANA_SEMBOL):
     """Ana coin için tüm indikatörleri, bağlam koşullarını ve hedefleri hazırlar."""
     df = mumlar[ana].copy().reset_index(drop=True)
@@ -155,6 +167,9 @@ def veri_seti_hazirla(mumlar: dict[str, pd.DataFrame], ana: str = config.ANA_SEM
     sonraki = o["close"].shift(-1) - o["open"].shift(-1)
     hedef["sonraki_yesil"] = (sonraki > 0).astype(float).where(sonraki.notna())
     gs = gun_sonu_kapanis(o)
+    # Gün sonuna çok az kalmışsa hedef anlamsız: günün son mumunda "gün sonu" o mumun kendi
+    # kapanışıdır ve hedef her zaman "yükselmedi" çıkar. Model bunu ezberleyip sahte isabet üretir.
+    gs = gs.where(gun_sonuna_kalan_saat(o) >= config.GUN_SONU_MIN_KALAN_SAAT)
     hedef["gun_sonu_yukari"] = (gs > o["close"]).astype(float).where(gs.notna())
     hedef["gun_sonu_getiri"] = (gs / o["close"] - 1) * 100
     # Gün sonuna kadar en kötü düşüş (long için) %

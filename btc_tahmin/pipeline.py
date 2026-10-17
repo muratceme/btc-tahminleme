@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from . import config, market, miner, models
-from .features import veri_seti_hazirla
+from .features import gun_sonuna_kalan_saat, veri_seti_hazirla
 
 
 def _gun_serisi(o: pd.DataFrame) -> pd.Series:
@@ -119,6 +119,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "son_mum_zamani": son["time"].isoformat(), "fiyat": float(son["close"]),
         "degisim_24s": _degisim_24s(o),
         "veri_mum_sayisi": int(len(o)),
+        "gun_sonuna_kalan_saat": round(float(gun_sonuna_kalan_saat(o).iloc[-1]), 2),
         "son_fiyatlar": [round(float(x), 6) for x in o["close"].iloc[-96:]],
         "veri_baslangic": o["time"].iloc[0].isoformat(),
         "teknik_ozet": {

@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from . import config
+from .features import gun_sonuna_kalan_saat
 
 try:
     from sklearn.ensemble import HistGradientBoostingClassifier
@@ -38,8 +39,7 @@ def ozellik_matrisi(o: pd.DataFrame) -> pd.DataFrame:
         X[f"ema{n}_uzak"] = (c / o[f"ema{n}"] - 1) * 100
     X["di_fark"] = o["pdi"] - o["mdi"]
     X["ichi_uzak"] = (c / o["ichi_ust"] - 1) * 100
-    yerel = o["time"] + pd.Timedelta(hours=config.GUN_SONU_UTC_OFFSET_SAAT)
-    X["gun_sonuna_kalan_saat"] = 24 - (yerel.dt.hour + yerel.dt.minute / 60)
+    X["gun_sonuna_kalan_saat"] = gun_sonuna_kalan_saat(o)
     X["saat_utc"] = o["time"].dt.hour
     X["haftanin_gunu"] = o["time"].dt.dayofweek
     for k in [x for x in o.columns if x.startswith("ctx_")]:
@@ -153,8 +153,7 @@ def dusus_riski(o: pd.DataFrame, hedef: pd.DataFrame) -> list[dict]:
     Sınırlar eğitim döneminden (ilk %70) öğrenilir, tutarlılık son %30'da ölçülür.
     """
     dd = hedef["gun_ici_max_dusus"]
-    yerel = o["time"] + pd.Timedelta(hours=config.GUN_SONU_UTC_OFFSET_SAAT)
-    kalan = 24 - (yerel.dt.hour + yerel.dt.minute / 60)
+    kalan = gun_sonuna_kalan_saat(o)
     vol_rejim = pd.qcut(o["atr_pct"].rank(method="first"), 3, labels=["dusuk", "orta", "yuksek"])
     kalan_kova = pd.cut(kalan, [0, 4, 8, 12, 16, 20, 24.01], labels=False)
     df = pd.DataFrame({"dd": dd, "vol": vol_rejim, "kalan": kalan_kova}).dropna()

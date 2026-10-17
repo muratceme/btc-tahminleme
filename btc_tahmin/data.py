@@ -60,7 +60,8 @@ def mumlari_getir(sembol: str, aralik: str = "15m", gun: int = config.GECMIS_GUN
         return _yeniden_ornekle(mumlari_getir(sembol, "5m", gun, guncelle), "10min")
 
     config.VERI_DIR.mkdir(parents=True, exist_ok=True)
-    dosya = config.VERI_DIR / f"{sembol}_{aralik}.csv"
+    # v2: önbelleğe yalnızca kapanmış mumlar yazılır (v1 yarım mumları da kaydediyordu)
+    dosya = config.VERI_DIR / f"{sembol}_{aralik}_v2.csv"
     eski = pd.DataFrame()
     baslangic_ms = int((time.time() - gun * 86400) * 1000)
     if dosya.exists():
@@ -70,14 +71,14 @@ def mumlari_getir(sembol: str, aralik: str = "15m", gun: int = config.GECMIS_GUN
             baslangic_ms = max(baslangic_ms, int(eski["time"].iloc[-1].timestamp() * 1000) + 1)
     if guncelle:
         yeni = _indir(sembol, aralik, baslangic_ms)
-        df = pd.concat([eski, yeni]) if not eski.empty else yeni
+        df = pd.concat([eski, yeni]) if not eski.empty and not yeni.empty else (yeni if eski.empty else eski)
     else:
         df = eski
     df = df.drop_duplicates("time").sort_values("time").reset_index(drop=True)
     sinir = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=gun)
-    df = df[df["time"] >= sinir].reset_index(drop=True)
+    df = _kapanmamis_mumu_at(df[df["time"] >= sinir].reset_index(drop=True), aralik)
     df.to_csv(dosya, index=False)
-    return _kapanmamis_mumu_at(df, aralik)
+    return df
 
 
 def _kapanmamis_mumu_at(df: pd.DataFrame, aralik: str) -> pd.DataFrame:

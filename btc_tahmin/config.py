@@ -19,6 +19,8 @@ GECMIS_GUN = 540
 
 # "Gün sonu" hangi saat diliminde hesaplanır (Türkiye: UTC+3, yaz/kış farkı yok)
 GUN_SONU_UTC_OFFSET_SAAT = 3
+# Gün sonuna bundan az kalmışsa gün sonu tahmini yapılmaz (hedef anlamsızlaşır)
+GUN_SONU_MIN_KALAN_SAAT = 1.0
 
 # --- Kombinasyon madenciliği ---
 MAX_KOSUL = 5                 # bir kombinasyonda en fazla kaç koşul
