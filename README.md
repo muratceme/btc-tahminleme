@@ -30,10 +30,15 @@ Python 3.10 veya daha yenisi gerekir. API anahtarı gerekmez; tüm kaynaklar her
 | `python -m btc_tahmin rapor --aralik 10m` | 10 dakikalık mumlarla (5m'den üretilir) |
 | `python -m btc_tahmin rapor --hizli` | Son 24 saatte bulunan kuralları yeniden kullanır (~1 dk) |
 | `python -m btc_tahmin rapor --coin BTC` | Sadece seçilen coin(ler) |
+| `python -m btc_tahmin canli --ac` | **Önerilen.** Her 15m mumda yeniler, panoyu **http://localhost:8000** adresinde yayınlar. Aynı Wi-Fi'daki telefondan terminalde yazan `http://192.168.x.x:8000` adresiyle açılır |
 | `python -m btc_tahmin izle --dakika 15 --ac` | Her 15m mum kapanışında otomatik yeniler, pano dakikada bir tazelenir |
 | `python -m btc_tahmin ozet` | Son raporu terminalde tekrar gösterir |
 
-Kısa yollar: Windows'ta `calistir.bat`, macOS/Linux'ta `./calistir.sh`. İkisi de izleme modunu başlatır.
+Kısa yollar: Windows'ta `calistir.bat`, macOS/Linux'ta `./calistir.sh`. İkisi de `canli` modunu başlatır.
+
+**Telefondan bakmak:** Telefon ile bilgisayar aynı Wi-Fi'da olmalı. Terminalde yazan `TELEFONDAN` adresini telefonun
+tarayıcısına yaz. Windows "erişime izin ver" diye sorarsa **Özel ağlar** kutusunu işaretleyip izin ver.
+Bilgisayar açık ve pencere açık olduğu sürece pano güncel kalır.
 
 **Claude Code ile:** repo klasöründe `claude` açıp `/btc-rapor` yaz. Rapor üretilir ve Wall Street brifingi
 formatında özetlenir. Sürekli takip için: `/loop 15m /btc-rapor hizli`. Kırım eklemek için:

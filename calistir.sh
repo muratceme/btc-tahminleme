@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kripto Risk Terminali: her 15m mum kapanışında raporu yeniler ve panoyu açar
+# Kripto Risk Terminali: her 15m mumda yeniler, panoyu http://localhost:8000 adresinde yayınlar
 cd "$(dirname "$0")"
 [ -d .venv ] && source .venv/bin/activate
-python3 -m btc_tahmin izle --dakika 15 --ac "$@"
+python3 -m btc_tahmin canli --ac "$@"
