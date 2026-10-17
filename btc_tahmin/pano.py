@@ -9,6 +9,7 @@ import html
 import math
 
 from . import config
+from .market import DOM_COINLER
 from .aciklama import AILELER, FORMASYONLAR, GRUP_SIRASI, hedef_metni, kosul_bilgisi
 
 CSS = """
@@ -110,6 +111,7 @@ tr.pasif td{opacity:.5}.satir-not{color:var(--soluk);font-size:12px;margin-top:4
 .kural-yuzde{font-family:var(--mono);font-size:20px;font-weight:800}
 .grafik-btn{margin-left:auto;font-size:12px;font-weight:700;color:var(--altin2);border:1px solid rgba(212,175,55,.45);border-radius:8px;
 padding:4px 10px;background:rgba(212,175,55,.07);white-space:nowrap}.grafik-btn:hover{background:rgba(212,175,55,.16);text-decoration:none}
+.net-satir{margin-top:6px;font-size:12px;color:var(--soluk);border-top:1px dashed var(--cizgi);padding-top:6px}
 .derin-kart{border-color:rgba(212,175,55,.35);box-shadow:0 0 0 1px rgba(212,175,55,.12) inset,0 10px 30px rgba(0,0,0,.35)}
 .grafik-kutu{height:520px;margin-top:10px}.grafik-kucuk{height:200px;margin-top:10px}@media (max-width:640px){.grafik-kutu{height:380px}}
 .kpi-4{grid-template-columns:repeat(auto-fit,minmax(min(150px,45%),1fr))}.kpi-4 .dev{font-size:clamp(20px,5vw,30px)!important}
@@ -342,12 +344,32 @@ def _kural_karti(r: dict, aralik: str, sembol: str | None = None) -> str:
     buton = (f'<a class="grafik-btn" href="grafik.html?s={_e(sembol)}_{_e(aralik)}&amp;k={_e(r["id"])}">📈 Grafikte incele</a>'
              if sembol and r.get("id") else "")
     birim = "gün" if r["hedef"] == "gun_sonu" else "bağımsız"
+    p = r.get("performans") or {}
+    rozet = ""
+    if r.get("emekli"):
+        rozet += '<span class="rozet kotu" title="Canlı karnede isabeti düştü; aktif listelerden çıkarıldı">EMEKLİ</span>'
+    elif p.get("yaslaniyor"):
+        rozet += (f'<span class="rozet orta" title="Son {p.get("son_n")} oluşumda isabet %{(p.get("son_oran") or 0)*100:.0f}">'
+                  'ZAYIFLIYOR</span>')
     return (f'<div class="kural"><div class="kural-ust"><span class="rozet {sinif}">{"▲" if yukselis else "▼"} {_e(hedef)}</span>'
-            f'<span class="kural-yuzde {sinif}">%{oran*100:.0f}</span><span class="kucuk">tutarlılık · {len(r["kosullar"])} koşul</span>{buton}</div>'
+            f'<span class="kural-yuzde {sinif}">%{oran*100:.0f}</span><span class="kucuk">tutarlılık · {len(r["kosullar"])} koşul</span>{rozet}{buton}</div>'
             + "".join(_cip(k) for k in r["kosullar"]) +
             f'<div class="satir-not">Hiç görülmemiş test döneminde bu {len(r["kosullar"])} koşul aynı anda <b>{n}</b> kez ({birim} oluşum) görüldü, '
             f'<b>{isabet}</b>\'inde tuttu. Normalde bu oran %{r["taban_oran"]*100:.0f} · kaldıraç x{r["kaldirac_lift"]} · '
-            f'eğitimde %{(r["egitim_oran"] or 0)*100:.0f} · doğrulamada %{(r["dogrulama_oran"] or 0)*100:.0f}.</div></div>')
+            f'eğitimde %{(r["egitim_oran"] or 0)*100:.0f} · doğrulamada %{(r["dogrulama_oran"] or 0)*100:.0f}.</div>'
+            + _net_satiri(p) + '</div>')
+
+
+def _net_satiri(p: dict) -> str:
+    t = (p or {}).get("test") or {}
+    if not t.get("islem"):
+        return ""
+    renk = "iyi" if t["ort_net"] > 0 else "kotu"
+    kf = f' · kâr faktörü <b>{t["kar_faktoru"]}</b>' if t.get("kar_faktoru") else ""
+    son = (f' · son {p["son_n"]} oluşumda isabet <b>%{p["son_oran"]*100:.0f}</b>' if p.get("son_oran") is not None else "")
+    return (f'<div class="net-satir">💰 Komisyon sonrası (işlem başı %{p["maliyet_yuzde"]:g} maliyet): ortalama net '
+            f'<b class="{renk}">{t["ort_net"]:+.3f}%</b> · kazandıran işlem %{t["net_kazanma_orani"]*100:.0f} · '
+            f'kazançta {t["ort_kazanc"]:+.2f}% / kayıpta {t["ort_kayip"]:+.2f}%{kf}{son}</div>')
 
 
 def _coin(c: dict, kirim: dict) -> str:
@@ -425,6 +447,10 @@ def _coin(c: dict, kirim: dict) -> str:
 {hero}
 <div class="aciklama-kutu">{_dayanak_metni(c)}</div>
 <div class="kart bolum derin-kart">{derin_html}</div>
+<div class="iki-sutun">
+  <div class="kart">{_pozisyon_karti(c)}</div>
+  <div class="kart">{_simulasyon_karti(c)}</div>
+</div>
 <div class="kart bolum">{_baslik('Risk tablosu · yalnızca %70+ tutarlılık', 'tutarlilik')}{_risk_tablosu(c)}</div>
 <div class="iki-sutun">
   <div class="kart">{_baslik(f"Sonraki {c['aralik']} mum · şu an aktif kombinasyonlar", 'kombinasyon')}{ml_html}{kural_html}</div>
@@ -435,6 +461,135 @@ def _coin(c: dict, kirim: dict) -> str:
   <details><summary>Kural kütüphanesi · gün sonu ({c['kural_sayisi']['gun_sonu']} kural, en iyi 20)</summary><div style="margin-top:10px">{kut(c['kural_kutuphanesi']['gun_sonu'])}</div></details>
 </div>
 </section>"""
+
+
+def _pozisyon_karti(c: dict) -> str:
+    p = c.get("pozisyon") or {}
+    bas = _baslik("Pozisyon hesaplayıcı · gün sonu sinyaline göre", "pozisyon")
+    if p.get("durum") != "var":
+        return bas + f'<p class="kucuk">{_e(p.get("neden", "Hesaplanamadı."))}</p><p class="cok-kucuk">Kasa ve risk ayarı: ayarlar/kullanici.json</p>'
+    long = p["yon"] == "LONG"
+    s = "iyi" if long else "kotu"
+    return bas + f"""
+<div class="kural-ust"><span class="rozet {s}">{"▲ LONG" if long else "▼ SHORT"}</span>
+<span class="kucuk">kasa {p['kasa_usd']:,.0f}$ · işlem başı risk %{p['islem_basi_risk_yuzde']:g} · genel puan çarpanı x{p['puan_carpani']}</span></div>
+<div class="kpi-izgara" style="margin-top:10px">
+<div class="kpi"><div class="e">Giriş</div><div class="d">{_fiyat(p['giris'])}</div><div class="a">son kapanış</div></div>
+<div class="kpi"><div class="e">Pozisyon</div><div class="d">{p['pozisyon_usd']:,.0f}$</div><div class="a">kaldıraç x{p['kaldirac']}{' (sınıra takıldı)' if p['kaldirac_siniri_uygulandi'] else ''}</div></div>
+<div class="kpi"><div class="e">Stop</div><div class="d kotu">{_fiyat(p['stop'])}</div><div class="a">{'-' if long else '+'}{p['stop_yuzde']}% · {_e(p['stop_dayanagi'])}</div></div>
+<div class="kpi"><div class="e">Hedef</div><div class="d iyi">{_fiyat(p['hedef'])}</div><div class="a">{'+' if long else '-'}{p['hedef_yuzde']}% · risk/ödül 1:1,5</div></div>
+</div>
+<p class="satir-not">Stop'a gelirse kayıp yaklaşık <b>{p['risk_usd']:,.2f}$</b> olur. Bu bir hesap makinesidir; tavsiye değildir.</p>"""
+
+
+def _egri_svg(egri: list, renk: str) -> str:
+    if not egri or len(egri) < 2:
+        return ""
+    xs = [e[0] for e in egri]
+    ys = [e[1] for e in egri]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    ara_x, ara_y = (x1 - x0) or 1, (y1 - y0) or 1
+    w, h = 400, 120
+    noktalar = " ".join(f"{(x - x0) / ara_x * w:.1f},{h - 6 - (y - y0) / ara_y * (h - 12):.1f}" for x, y in egri)
+    bas = h - 6 - (egri[0][1] - y0) / ara_y * (h - 12)
+    return (f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none" style="width:100%;height:120px;display:block;margin:8px 0" aria-hidden="true">'
+            f'<line x1="0" y1="{bas:.1f}" x2="{w}" y2="{bas:.1f}" stroke="var(--soluk2)" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>'
+            f'<polyline points="{noktalar}" fill="none" stroke="{renk}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>')
+
+
+def _simulasyon_karti(c: dict) -> str:
+    bas = _baslik("Kasa simülasyonu · test dönemi", "simulasyon")
+    sims = c.get("simulasyon") or {}
+    parca = []
+    for ad, baslik in (("derin", "Derin kurallar (%85+)"), ("sonraki_mum", "Sonraki mum kuralları")):
+        sm = sims.get(ad)
+        if not sm:
+            parca.append(f'<p class="kucuk"><b>{baslik}:</b> test döneminde işlem yok.</p>')
+            continue
+        renk = "var(--iyi)" if sm["getiri_yuzde"] >= 0 else "var(--kotu)"
+        parca.append(
+            f'<div style="margin-bottom:14px"><div class="kural-ust"><b>{baslik}</b>'
+            f'<span class="mono {"iyi" if sm["getiri_yuzde"] >= 0 else "kotu"}">{sm["baslangic_kasa"]:,.0f}$ → {sm["son_kasa"]:,.0f}$ '
+            f'({sm["getiri_yuzde"]:+.1f}%)</span></div>{_egri_svg(sm["egri"], renk)}'
+            f'<div class="cok-kucuk">{sm["islem"]} işlem · kazandıran %{(sm["kazanma_orani"] or 0)*100:.0f} · en kötü düşüş {sm["max_dusus_yuzde"]}% · '
+            f'aynı dönemde al-tut {sm["al_tut_yuzde"]:+.1f}% · işlem başı maliyet %{sm["maliyet_yuzde"]:g}</div></div>')
+    return bas + "".join(parca) + (
+        '<p class="cok-kucuk">Aynı anda tek işlem, kaldıraçsız, kasanın tamamıyla. Kurallar bu dönem de dahil seçildiği için sonuç '
+        '<b>iyimserdir</b>; gerçek performans için Canlı karneye bak.</p>')
+
+
+def _net_yazi(v) -> str:
+    return "" if v is None else f"{v:+.2f}%"
+
+
+def _karne_karti(k: dict, bildirim: dict | None) -> str:
+    bas = _baslik("Canlı karne · sistemin gerçek sinyal performansı", "karne")
+    bd = bildirim or {}
+    tel = ('Telegram: <span class="iyi">açık</span>' if bd.get("durum") == "ok" else
+           'Telegram: <span class="notr">kapalı</span> · kurmak için <span class="mono">python -m btc_tahmin telegram</span>'
+           if bd.get("durum") in (None, "kapalı") else f'Telegram: <span class="kotu">{_e(bd["durum"])}</span>')
+    if not k or not k.get("toplam"):
+        return bas + ('<p class="kucuk">Henüz kayıtlı sinyal yok. Canlı modda çalıştıkça panoda çıkan her sinyal kaydedilir, süresi dolunca '
+                      'gerçek fiyatla “tuttu / tutmadı” diye işaretlenir. Birkaç gün sonra burada sistemin gerçek isabetini göreceksin.</p>'
+                      f'<p class="cok-kucuk">{tel}</p>')
+
+    def kutu(ad, o):
+        if not o.get("sinyal"):
+            return f'<div class="kpi"><div class="e">{_e(ad)}</div><div class="d notr">—</div><div class="a">sonuçlanan sinyal yok</div></div>'
+        renk = "iyi" if o["isabet"] >= o["beklenen_isabet"] - 0.05 else ("orta" if o["isabet"] >= 0.55 else "kotu")
+        return (f'<div class="kpi"><div class="e">{_e(ad)}</div><div class="d {renk}">%{o["isabet"]*100:.0f}</div>'
+                f'<div class="a">{o["sinyal"]} sinyal · beklenen %{o["beklenen_isabet"]*100:.0f} · ort. net {o["ort_net"]:+.3f}%</div></div>')
+    turler = "".join(f'<tr><td>{_e(ad)}</td><td class="sayi">{o["sinyal"]}</td><td class="sayi">%{o["isabet"]*100:.0f}</td>'
+                     f'<td class="sayi">%{o["beklenen_isabet"]*100:.0f}</td><td class="sayi {"iyi" if o["toplam_net"] >= 0 else "kotu"}">{o["toplam_net"]:+.2f}%</td></tr>'
+                     for ad, o in k["turler"].items() if o.get("sinyal"))
+    durum = {"tuttu": '<span class="rozet iyi">✓</span>', "tutmadi": '<span class="rozet kotu">✕</span>',
+             "bekliyor": '<span class="rozet orta">…</span>', "veri_yok": '<span class="rozet notr">?</span>'}
+    son = "".join(f'<li><span>{durum.get(x["durum"], "")} <b>{_e(x["sembol"].replace("USDT", ""))}</b> {_e(x["aciklama"][:110])}'
+                  f'<div class="cok-kucuk">{_e(x["zaman"][:16].replace("T", " "))} UTC · beklenen %{float(x["tutarlilik"] or 0)*100:.0f}</div></span>'
+                  f'<span class="etiket-sag {"iyi" if (x["net"] or 0) > 0 else "kotu"}">{_net_yazi(x["net"])}</span></li>'
+                  for x in k["son_sinyaller"][:12])
+    return bas + (
+        f'<div class="kpi-izgara" style="grid-template-columns:repeat(auto-fit,minmax(min(170px,45%),1fr))">{kutu("Tüm zamanlar", k["genel"])}{kutu("Son 7 gün", k["son_7_gun"])}'
+        f'<div class="kpi"><div class="e">Kayıt</div><div class="d">{k["toplam"]}</div><div class="a">{k["bekleyen"]} sonuç bekliyor · ilk {_e(k["ilk_sinyal"][:10])}</div></div>'
+        f'<div class="kpi"><div class="e">Emekli kural</div><div class="d">{len(k.get("emekli", []))}</div><div class="a">canlıda isabeti düşenler</div></div></div>'
+        + (f'<div class="tablo-sar" style="margin-top:12px"><table><thead><tr><th>Sinyal türü</th><th class="sayi">Sinyal</th><th class="sayi">Canlı isabet</th>'
+           f'<th class="sayi">Beklenen</th><th class="sayi">Toplam net</th></tr></thead><tbody>{turler}</tbody></table></div>' if turler else "")
+        + f'<details><summary>Son sinyaller</summary><ul class="liste">{son}</ul></details><p class="cok-kucuk">{tel}</p>')
+
+
+def _makro_karti(b: dict) -> str:
+    bas = _baslik("Makro ve kurumsal akış", "makro")
+    mk = (b.get("makro") or {})
+    kor = mk.get("btc_korelasyon") or {}
+    sat = "".join(
+        f'<tr><td><b>{_e(ad)}</b><div class="cok-kucuk">{_e(v["aciklama"])}</div></td><td class="sayi">{v["deger"]:,.2f}</td>'
+        f'{_degisim_hucre(v.get("degisim_24s"))}<td class="sayi">{"—" if ad not in kor else f"{kor[ad]:+.2f}"}</td></tr>'
+        for ad, v in (mk.get("veriler") or {}).items())
+    makro = (f'<div class="tablo-sar"><table><thead><tr><th>Gösterge</th><th class="sayi">Değer</th><th class="sayi">24s %</th>'
+             f'<th class="sayi" title="Son ~10 günde saatlik getirilerin BTC ile korelasyonu (+1 birlikte, -1 ters)">BTC kor.</th></tr></thead>'
+             f'<tbody>{sat}</tbody></table></div>') if sat else '<p class="kucuk">Makro veri alınamadı (Veri durumu paneline bak).</p>'
+    etf_html = ""
+    for ad, v in ((b.get("etf") or {}).get("veriler") or {}).items():
+        mx = max(abs(g["net_milyon_usd"]) for g in v["gunler"]) or 1
+        cubuk = "".join(
+            f'<div title="{_e(g["tarih"])}: {g["net_milyon_usd"]:+,.0f} M$" style="flex:1;display:flex;flex-direction:column;justify-content:center;height:46px">'
+            f'<div style="height:{abs(g["net_milyon_usd"]) / mx * 22:.0f}px;background:{"var(--iyi)" if g["net_milyon_usd"] >= 0 else "var(--kotu)"};'
+            f'{"align-self:stretch;margin-top:auto;margin-bottom:23px" if g["net_milyon_usd"] >= 0 else "align-self:stretch;margin-top:23px;margin-bottom:auto"};border-radius:2px"></div></div>'
+            for g in v["gunler"])
+        etf_html += (f'<div style="margin-top:12px"><div class="kural-ust"><b>{_e(ad)} spot ETF akışı</b><span class="kucuk">son gün '
+                     f'<b class="{"iyi" if v["son"]["net_milyon_usd"] >= 0 else "kotu"}">{v["son"]["net_milyon_usd"]:+,.0f} M$</b> ({_e(v["son"]["tarih"])}) · '
+                     f'5 gün {v["toplam_5g"]:+,.0f} M$</span></div><div style="display:flex;gap:4px">{cubuk}</div></div>')
+    if not etf_html:
+        etf_html = '<p class="cok-kucuk" style="margin-top:12px">ETF akış verisi alınamadı (kaynak bot korumalı olabilir).</p>'
+    op_html = ""
+    for para, v in (b.get("opsiyon") or {}).items():
+        fark = (v["max_pain"] / v["spot"] - 1) * 100 if v.get("spot") else 0
+        op_html += (f'<li><span><b>{_e(para)} opsiyon</b> · put/call {v["put_call_orani"]} '
+                    f'<span class="cok-kucuk">({"put ağırlıklı, korunma talebi" if (v["put_call_orani"] or 0) > 1 else "call ağırlıklı"})</span>'
+                    f'<div class="cok-kucuk">En yakın büyük vade {_e(v["vade"][:10])} ({v["vade_saat_kaldi"]:.0f} sa) · max pain {v["max_pain"]:,.0f} '
+                    f'(spot {v["spot"]:,.0f}, {fark:+.1f}%). Vadeye yaklaştıkça fiyat max pain\'e çekilme eğilimi gösterebilir.</div></span></li>')
+    op_html = f'<ul class="liste" style="margin-top:12px">{op_html}</ul>' if op_html else ""
+    return bas + makro + etf_html + op_html
 
 
 # ------------------------------------------------------------------ ortak iskelet
@@ -485,6 +640,17 @@ def _saglik_paneli(satirlar: list[dict]) -> str:
             f'<div style="columns:2 360px;column-gap:24px">{govde}</div></details>')
 
 
+def _olay_detay(e: dict) -> str:
+    p = []
+    if e.get("beklenti"):
+        p.append(f"beklenti {e['beklenti']}")
+    if e.get("onceki"):
+        p.append(f"önceki {e['onceki']}")
+    if e.get("kaynak") == "otomatik":
+        p.append("otomatik takvim")
+    return f'<div class="cok-kucuk">{_e(" · ".join(p))}</div>' if p else ""
+
+
 def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
     gp = rapor["genel_puan"]
     b = rapor["baglam"]
@@ -498,7 +664,7 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
         oge.append(f'<span><b>{_e(s.replace("USDT", ""))}</b>{_fiyat(c["fiyat"])} <span class="{"iyi" if d >= 0 else "kotu"}">{d:+.2f}%</span>'
                    f' · risk <span class="{_sinif(lr)}">{"%" + str(lr) if lr is not None else "—"}</span></span>')
     dom = (b.get("dominans") or {}).get("anlik") or {}
-    for k in ("btc", "eth", "xrp", "usdt", "usdc"):
+    for k in [x for x in DOM_COINLER if x in dom]:
         if k in dom:
             dg = ((b.get("dominans") or {}).get("degisim") or {}).get(k, {}).get("24s")
             ek = "" if dg is None else f' <span class="{"iyi" if dg >= 0 else "kotu"}">{dg:+.2f}</span>'
@@ -526,7 +692,7 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
                    f'</div><div style="position:relative;height:10px"><span style="position:absolute;left:calc({fg["deger"]}% - 5px);top:-4px;color:var(--yazi)">▲</span></div>')
     else:
         kart_fg = f'<div class="kart">{_baslik("Korku / açgözlülük", "duygu")}<div class="dev notr">—</div>'
-    olay = "".join(f'<li><span>{_e(e["ad"])}</span><span class="etiket-sag">{e["saat_kaldi"]} sa</span></li>'
+    olay = "".join(f'<li><span>{_e(e["ad"])}{_olay_detay(e)}</span><span class="etiket-sag">{e["saat_kaldi"]} sa</span></li>'
                    for e in gp.get("yaklasan_olaylar", [])) or "<li class='kucuk'>48 saat içinde kayıtlı olay yok</li>"
     kart_fg += f'<div class="kart-baslik" style="margin-top:16px"><span>Yaklaşan olaylar · 48 saat</span></div><ul class="liste">{olay}</ul></div>'
 
@@ -535,7 +701,7 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
         sat = "".join(
             f'<tr><td><b>{k.upper()}.D</b></td><td class="sayi">{dom[k]:.2f}%</td>'
             f'{_degisim_hucre(dd.get(k, {}).get("24s"))}{_degisim_hucre(dd.get(k, {}).get("7g"))}</tr>'
-            for k in ("btc", "eth", "xrp", "usdt", "usdc"))
+            for k in [x for x in DOM_COINLER if x in dom])
         sat += (f'<tr><td><b>STABLE.D</b></td><td class="sayi">{dom["stable_toplam"]:.2f}%</td><td></td><td></td></tr>'
                 f'<tr><td><b>OTHERS.D</b></td><td class="sayi">{dom["others"]:.2f}%</td><td></td><td></td></tr>')
         yorum = "".join(f'<li><span>{_e(y)}</span></li>' for y in b["dominans"].get("yorum", []))
@@ -553,7 +719,10 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
     kart_vadeli = (f'<div class="kart">{_baslik("Vadeli piyasa", "vadeli")}<div class="tablo-sar"><table><thead><tr><th>Çift</th>'
                    f'<th class="sayi">Funding</th><th class="sayi">OI 24s</th><th class="sayi">L/S</th><th class="sayi">Taker</th></tr></thead>'
                    f'<tbody>{vd or "<tr><td colspan=5 class=kucuk>veri yok</td></tr>"}</tbody></table></div>'
-                   f'<p class="cok-kucuk">Funding pozitif ve yüksekse longlar kalabalık, ani düşüşte likidasyon zinciri riski var.</p></div>')
+                   + "".join(f'<p class="kucuk kotu">⚠ {_e(s.replace("USDT", ""))}: {_e(v["likidasyon_tahmini"])}</p>'
+                             for s, v in (b.get("vadeli") or {}).items() if v.get("likidasyon_tahmini"))
+                   + '<p class="cok-kucuk">Funding pozitif ve yüksekse longlar kalabalık, ani düşüşte likidasyon zinciri riski var. '
+                   'Likidasyon uyarısı, açık pozisyon ile fiyatın 1 saatte birlikte sert değişmesinden tahmin edilir.</p></div>')
 
     sekmeler = "".join(
         f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>'
@@ -569,6 +738,8 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
     govde = f"""<main>
 {_saglik_paneli(rapor.get("saglik") or [])}
 <div class="izgara-4">{kart_puan}{kart_fg}{kart_dom}{kart_vadeli}</div>
+<div class="iki-sutun"><div class="kart">{_karne_karti(rapor.get("karne") or {}, rapor.get("bildirim"))}</div>
+<div class="kart">{_makro_karti(b)}</div></div>
 <div class="sekmeler" role="tablist">{sekmeler}</div>
 {"".join(_coin(c, gp) for c in coinler.values())}
 <div class="kart bolum">{_baslik(f"Haber akışı · son 24 saat · {hb.get('adet', 0)} başlık · skor {hb.get('toplam_skor', 0)}", 'haberler')}
@@ -609,9 +780,11 @@ def nasil_calisir_html() -> str:
     toc = [("ozet", "1. Tek cümlede sistem"), ("akis", "2. Adım adım akış"), ("veri", "3. Hangi veriler?"),
            ("indikatorler", "4. İndikatörler"), ("formasyonlar", "5. Formasyonlar"), ("baglam", "6. Bağlam koşulları"),
            ("kombinasyon", "7. Kombinasyon arama"), ("tutarlilik", "8. Tutarlılık nasıl ölçülür?"),
-           ("derin", "8b. Derin tarama ve grafik"), ("risk-turleri", "9. Risk türleri"), ("sinyal-haritasi", "10. Sinyal haritası"), ("kirimlar", "11. Genel puan ve kırımlar"),
-           ("dominans", "12. Dominanslar"), ("duygu", "13. Duygu ve vadeli"), ("haberler", "14. Haberler"),
-           ("veri-durumu", "14b. Veri durumu paneli"), ("okuma", "15. Panoyu okuma rehberi"), ("sinirlar", "16. Sınırlar ve uyarılar"), ("sozluk", "17. Sözlük")]
+           ("derin", "8b. Derin tarama ve grafik"), ("net", "8c. Komisyon ve net kazanç"),
+           ("simulasyon", "8d. Kasa simülasyonu"), ("karne", "8e. Canlı karne"), ("pozisyon", "8f. Pozisyon hesaplayıcı"),
+           ("risk-turleri", "9. Risk türleri"), ("sinyal-haritasi", "10. Sinyal haritası"), ("kirimlar", "11. Genel puan ve kırımlar"),
+           ("dominans", "12. Dominanslar"), ("makro", "12b. Makro, ETF, opsiyon"), ("duygu", "13. Duygu ve vadeli"), ("haberler", "14. Haberler"),
+           ("veri-durumu", "14b. Veri durumu paneli"), ("bildirim", "14c. Telegram ve uzaktan erişim"), ("okuma", "15. Panoyu okuma rehberi"), ("sinirlar", "16. Sınırlar ve uyarılar"), ("sozluk", "17. Sözlük")]
     toc_html = "".join(f'<a href="#{i}">{_e(a)}</a>' for i, a in toc)
 
     def bol(i, baslik, icerik):
@@ -699,6 +872,42 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <li><span>Oluşum tablosunda bir satıra tıklayınca grafik o ana gider. Giriş, çıkış fiyatı ve değişim yazar.</span></li>
 </ul>
 <p class="kucuk">Derin kurallar nadir oluşur. Çoğu zaman “şu an aktif derin kural yok” görürsün. Aktif olduğunda, işlem açarken ek teyit olarak kullan.</p>"""))
+    s.append(bol("net", "8c. Komisyon ve net kazanç", f"""
+<p><b>Tutarlılık</b> bir kuralın yönü ne sıklıkla doğru bildiğini söyler. Ama yönü doğru bilip çok az kazandıran bir kural, komisyon düşülünce
+<b>zarar ettirebilir</b>. Bu yüzden her kural için işlem gibi hesap yapılır:</p>
+<ul class="liste">
+<li><span><b>Giriş:</b> sinyal mumunun kapanışı. <b>Çıkış:</b> hedefin bittiği mumun kapanışı (ör. “3 mum sonra” için 3. mum).</span></li>
+<li><span><b>Maliyet:</b> giriş + çıkış komisyonu ve kayma toplamı. Şu an <b>{config.ISLEM_TURU}</b> seçili: işlem başına
+<b>%{config.ISLEM_MALIYETI_YUZDE[config.ISLEM_TURU]:g}</b> (vadeli %0,14 · spot %0,24). Değiştirmek için ayarlar/kullanici.json içinde
+<span class="mono">"islem_turu"</span>.</span></li>
+<li><span><b>Ortalama net:</b> komisyon düşüldükten sonra işlem başına ortalama kazanç. <b>Kâr faktörü:</b> toplam kazanç ÷ toplam kayıp (1'in üstü kârlı, 1,5+ iyi).</span></li>
+<li><span><b>Eleme:</b> Test döneminde komisyon sonrası ortalama net kazancı sıfır ya da negatif olan kural <b>hiç gösterilmez</b>.</span></li>
+<li><span><b>ZAYIFLIYOR rozeti:</b> Kuralın son 20 oluşumdaki isabeti, test tutarlılığının 15 puan altına düştüyse çıkar. Kural eskisi kadar tutmuyor olabilir.</span></li>
+</ul>"""))
+    s.append(bol("simulasyon", "8d. Kasa simülasyonu", """
+<p>“Test döneminde bu kuralların sinyallerine uysaydım 1.000$ ne olurdu?” sorusunun cevabı. Her coin için iki eğri gösterilir: derin kurallar ve sonraki mum kuralları.</p>
+<ul class="liste">
+<li><span>Aynı anda tek işlem açılır, açık işlem varken gelen sinyal atlanır. Kaldıraç yok, her işleme kasanın tamamıyla girilir. Komisyon dahildir.</span></li>
+<li><span>Kıyas için aynı dönemde sadece alıp tutmanın (al-tut) getirisi de yazar. <b>En kötü düşüş</b>, kasanın zirveden en çok ne kadar eridiğidir.</span></li>
+<li><span><b>Dürüst uyarı:</b> Kurallar bu dönemin verisi de dahil seçildiği için simülasyon <b>iyimserdir</b>. Gerçek performansı canlı karne gösterir.</span></li>
+</ul>"""))
+    s.append(bol("karne", "8e. Canlı karne", f"""
+<p>Sistemin gerçek dünyadaki başarısını ölçen en dürüst bölüm. Canlı modda panoda çıkan her sinyal (aktif kurallar ve gün sonu özeti) saatiyle birlikte
+<span class="mono">veri/sinyal_gunlugu.csv</span> dosyasına kaydedilir. Süresi dolunca gerçek fiyatla <b>tuttu / tutmadı</b> diye işaretlenir ve komisyon sonrası net sonucu yazılır.</p>
+<ul class="liste">
+<li><span><b>Canlı isabet ile beklenen</b> (kuralların test tutarlılığı) yan yana gösterilir. Canlı isabet beklenenin çok altındaysa sistem o dönemde iyi çalışmıyor demektir.</span></li>
+<li><span>Aynı kural, önceki işlemi bitmeden tekrar sinyal verirse yeni işlem sayılmaz (şişirme yok).</span></li>
+<li><span><b>Emekli kurallar:</b> Canlıda en az {config.KARNE_MIN_SINYAL} sinyal verip isabeti %{config.KARNE_EMEKLI_ORAN*100:.0f}'in altında kalan kural “şu an aktif” listelerinden çıkarılır.</span></li>
+<li><span>Terminalde <span class="mono">python -m btc_tahmin karne</span> ile de görebilirsin.</span></li>
+</ul>"""))
+    s.append(bol("pozisyon", "8f. Pozisyon hesaplayıcı", f"""
+<p>Gün sonu için net bir yön sinyali olduğunda (long riski %40 altı ya da %60 üstü), kasana göre işlem büyüklüğünü hesaplar.</p>
+<ul class="liste">
+<li><span><b>Stop:</b> gün içi en kötü hareket sınırının en güvenli seviyesinin biraz ötesi. Long için “max düşüş”, short için “max yükseliş” sınırı kullanılır.</span></li>
+<li><span><b>Risk tutarı:</b> kasa × işlem başı risk (şu an {config.KASA_USD:,.0f}$ × %{config.ISLEM_BASI_RISK_YUZDE:g}) × genel puan çarpanı. Genel puan %80 ise riske edilen tutar da %80'ine iner.</span></li>
+<li><span><b>Pozisyon</b> = risk tutarı ÷ stop mesafesi. En fazla kasa × {config.MAX_KALDIRAC:g} kaldıraç. <b>Hedef</b> = 1,5 × stop mesafesi (risk/ödül 1:1,5).</span></li>
+<li><span>Kasa, risk yüzdesi ve maksimum kaldıraç ayarlar/kullanici.json dosyasından değiştirilir. Bu bir hesap makinesidir, tavsiye değildir.</span></li>
+</ul>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """
 <div class="tablo-sar"><table><thead><tr><th>Ad</th><th>Ne söyler?</th><th>Tutarlılık neyi ölçer?</th></tr></thead><tbody>
 <tr><td><b>Long riski</b></td><td>Şimdi long açarsan gün sonunda (TSİ 23:59) zararda olma ihtimali.</td><td>Model bu güvendeyken gün sonu yönünü ne sıklıkla doğru bildi.</td></tr>
@@ -734,6 +943,17 @@ Sebebi şu: Savaş gibi olaylar geçmiş veride yeterince yok ve ne zaman bitece
 <tr><td>ETH.D / XRP.D ↑</td><td>O coine özel ilgi artıyor.</td></tr>
 </tbody></table></div>
 <p class="kucuk">CoinGecko'nun ücretsiz servisi geçmiş dominans vermez. 24 saatlik değişim ilk çalıştırmalarda 5 coinin market cap payından <i>tahmin</i> edilir. Program düzenli çalıştıkça kendi kayıtlarından <b>gerçek</b> değişimi kullanır; panoda hangisinin kullanıldığı yazar.</p>"""))
+    s.append(bol("makro", "12b. Makro, ETF, opsiyon ve likidasyon", """
+<div class="tablo-sar"><table><thead><tr><th>Veri</th><th>Kaynak</th><th>Nasıl okunur?</th></tr></thead><tbody>
+<tr><td>Nasdaq 100 ve S&P 500 vadeli</td><td>Yahoo Finance</td><td>BTC çoğu gün Nasdaq ile aynı yönde hareket eder. “BTC kor.” sütunu son ~10 günde saatlik getirilerin korelasyonu (+1 birebir aynı, 0 ilişkisiz, −1 ters). Nasdaq 24 saatte %1,5+ düşerse 3 puan kırım.</td></tr>
+<tr><td>Dolar endeksi (DXY)</td><td>Yahoo Finance</td><td>Dolar güçlenince kripto baskılanır. 24 saatte +%0,5 ve üstü 2 puan kırım.</td></tr>
+<tr><td>Altın, ABD 10 yıllık faiz</td><td>Yahoo Finance</td><td>Güvenli liman talebi ve faiz baskısı.</td></tr>
+<tr><td>Spot BTC/ETH ETF akışları</td><td>Farside (deneysel)</td><td>Kurumsal paranın girişi/çıkışı (milyon $). Son gün −200 M$ ve altı 3 puan kırım. Site bot koruması kullanabildiği için bazen gelmeyebilir.</td></tr>
+<tr><td>Opsiyon put/call oranı ve max pain</td><td>Deribit</td><td>Put/call 1'in üstü korunma talebi yüksek. Max pain, opsiyon yazanların en az ödediği fiyat; büyük vadelere yaklaşırken fiyat bu seviyeye çekilme eğilimi gösterebilir. Büyük vade 24 saat içindeyse 2 puan kırım.</td></tr>
+<tr><td>Otomatik ekonomik takvim</td><td>ForexFactory</td><td>Bu ve gelecek haftanın yüksek/orta etkili ABD verileri (CPI, NFP, FOMC…) beklenti ve önceki değerleriyle otomatik eklenir. Elle girdiğin olaylarla birleşir.</td></tr>
+<tr><td>Likidasyon tahmini</td><td>Binance Futures</td><td>Açık pozisyon 1 saatte %2,5+ düşerken fiyat da %1,2+ sert hareket ettiyse zincirleme likidasyon olmuş olabilir. Ücretsiz doğrudan likidasyon verisi olmadığı için tahmindir. 3 puan kırım.</td></tr>
+</tbody></table></div>
+<p class="kucuk">Bunlar modellere girmez; ortamı anlaman ve genel puan kırımı içindir.</p>"""))
     s.append(bol("duygu", "13. Duygu ve vadeli piyasa", """
 <ul class="liste">
 <li><span><b>Korku/Açgözlülük (0-100):</b> 0-25 aşırı korku, 75-100 aşırı açgözlülük. Uçlar genelde dönüş öncesi görülür. ≤20 veya ≥80 ise 5 puan kırım.</span></li>
@@ -753,6 +973,14 @@ Puan basit ve hızlıdır; nüansı kaçırabilir. Bu yüzden modellere girmez, 
 <li><span><span class="kotu">✗ hata</span>: Gelmesi gereken veri gelmedi. Yanında sebebi yazar. Örneğin hız sınırı (429) birkaç dakikada kendiliğinden düzelir; erişim engeli (403) için farklı ağ veya VPN gerekebilir.</span></li>
 </ul>
 <p>Terminalde <span class="mono">python -m btc_tahmin kontrol</span> yazarak aynı listeyi görebilirsin. <span class="mono">--kaynaklar</span> eklersen dış kaynaklar o an tekrar denenir.</p>"""))
+    s.append(bol("bildirim", "14c. Telegram bildirimi ve uzaktan erişim", f"""
+<p><b>Telegram:</b> Terminalde <span class="mono">python -m btc_tahmin telegram</span> yaz. Adım adım sorar: @BotFather'dan bot açarsın, anahtarı yapıştırırsın,
+bota bir mesaj atarsın, bitti. Sonra canlı modda tutarlılığı %{config.TELEGRAM.get("min_tutarlilik", 0.8)*100:.0f} ve üzeri her yeni sinyal telefonuna mesaj olarak gelir.
+Eşiği ayarlar/kullanici.json içindeki <span class="mono">telegram.min_tutarlilik</span> ile değiştirebilirsin. Anahtarın bu dosyada durur ve git'e gönderilmez.</p>
+<p><b>Evden dışarıdan erişim:</b> <span class="mono">python -m btc_tahmin canli --tunel</span> komutu, Cloudflare'in ücretsiz tüneliyle
+<span class="mono">https://….trycloudflare.com</span> gibi bir adres açar. Mobil veriyle de çalışır. Pano otomatik olarak şifrelenir (kullanıcı adı <b>kripto</b>, şifre terminalde yazar).
+Önce bir kez cloudflared kurman gerekir: Windows'ta <span class="mono">winget install --id Cloudflare.cloudflared</span>.
+Bilgisayar kapalıyken de çalışması için projeyi küçük bir sunucuda (VPS) aynı komutla çalıştırabilirsin.</p>"""))
     s.append(bol("okuma", "15. Panoyu okuma rehberi", """
 <ol>
 <li><b>Üstteki genel puana bak.</b> %90 üstü normal ortam. %70-85 arasında pozisyon boyutunu küçült. %70 altında çok dikkatli ol.</li>
@@ -827,7 +1055,8 @@ function ciz(D,R){
   document.title=D.sembol.replace('USDT','')+' · '+R.hedef+' · Kural grafiği';
   var O=R.olusumlar, biten=O.filter(function(o){return o[2]>=0}), tut=biten.filter(function(o){return o[2]===1});
   function oran(a){var t=a.filter(function(o){return o[2]===1}).length;return a.length?(100*t/a.length).toFixed(0)+'%':'—'}
-  function ort(a){if(!a.length)return '—';var s=0;a.forEach(function(o){s+=o[5]});return (s/a.length>=0?'+':'')+(s/a.length).toFixed(2)+'%'}
+  function ort(a,k){k=k||5;if(!a.length)return '—';var s=0;a.forEach(function(o){s+=o[k]});return (s/a.length>=0?'+':'')+(s/a.length).toFixed(2)+'%'}
+  function topla(a){var s=0;a.forEach(function(o){s+=o[6]});return s}
   var tutmayan=biten.filter(function(o){return o[2]===0}), aktif=O.some(function(o){return o[1]===3});
   var cips=R.kosullar.map(function(k){return '<span class="cip '+k.egilim+'" title="'+esc(k.aciklama)+'">'+esc(k.etiket)+'</span>'}).join('');
   $('icerik').innerHTML=
@@ -842,7 +1071,7 @@ function ciz(D,R){
     kpi('Tüm zamanlar',tut.length+' / '+biten.length,'isabet '+oran(biten))+
     kpi('Eğitim · doğrulama',oran(biten.filter(function(o){return o[1]===0}))+' · '+oran(biten.filter(function(o){return o[1]===1})),'kuralın bulunduğu ve elendiği dönemler')+
     kpi('Test (hiç görülmemiş)',oran(biten.filter(function(o){return o[1]===2})),'n = '+biten.filter(function(o){return o[1]===2}).length+' · normal oran %'+Math.round(R.taban_oran*100))+
-    kpi('Ortalama hareket',ort(tut)+' / '+ort(tutmayan),'tuttuğunda / tutmadığında (çıkış fiyatına kadar)')+
+    kpi('Net kazanç (komisyonlu)',ort(biten,6),'işlem başı ort. · maliyet %'+R.maliyet+' · toplam '+(topla(biten)>=0?'+':'')+topla(biten).toFixed(1)+'% · fiyat tuttuğunda '+ort(tut)+' / tutmadığında '+ort(tutmayan))+
    '</div>'+
    '<div class="kart bolum"><div class="kart-baslik"><span>Mum grafiği · tüm oluşumlar</span>'+
    '<div class="filtre" id="filtre"><button data-f="hepsi" aria-pressed="true">Tümü</button><button data-f="test">Sadece test</button>'+
@@ -851,7 +1080,7 @@ function ciz(D,R){
    '<div class="kart bolum"><div class="kart-baslik"><span>Zaman içinde isabet · birikimli</span></div>'+
    '<div id="grafik2" class="grafik-kucuk"></div><p class="cok-kucuk">Çizgi yatay ve yüksek kalıyorsa kural her dönemde tutmuş demektir. Sona doğru düşüyorsa kural zayıflıyor olabilir. Kesikli çizgi: normal (rastgele) oran.</p></div>'+
    '<div class="kart bolum"><div class="kart-baslik"><span>Tüm oluşumlar ('+O.length+') · en yeni üstte</span></div><div class="tablo-sar" style="max-height:460px;overflow-y:auto"><table><thead><tr>'+
-   '<th>Tarih (TSİ)</th><th>Dönem</th><th class="sayi">Giriş</th><th class="sayi">Çıkış</th><th class="sayi">Değişim</th><th>Sonuç</th></tr></thead><tbody id="tablo"></tbody></table></div></div>';
+   '<th>Tarih (TSİ)</th><th>Dönem</th><th class="sayi">Giriş</th><th class="sayi">Çıkış</th><th class="sayi">Fiyat değişimi</th><th class="sayi">Net işlem</th><th>Sonuç</th></tr></thead><tbody id="tablo"></tbody></table></div></div>';
 
   var renk={yazi:'#8b97a9',cizgi:'rgba(148,163,184,.08)',kenar:'rgba(148,163,184,.22)'};
   var ortak={layout:{background:{type:'solid',color:'transparent'},textColor:renk.yazi,fontFamily:'JetBrains Mono, monospace'},
@@ -884,7 +1113,7 @@ function ciz(D,R){
 
   var satir=O.slice().reverse().map(function(o){var s=o[2]<0?'<span class="rozet altin">BEKLENİYOR</span>':(o[2]===1?'<span class="rozet iyi">✓ TUTTU</span>':'<span class="rozet kotu">✕ TUTMADI</span>');
     var d=o[5]==null?'—':'<span class="'+(o[5]>=0?'iyi':'kotu')+'">'+(o[5]>=0?'+':'')+o[5].toFixed(2)+'%</span>';
-    return '<tr class="tik" data-t="'+o[0]+'"><td class="mono">'+tarih(o[0])+'</td><td>'+BOL[o[1]]+'</td><td class="sayi mono">'+fiyat(o[3])+'</td><td class="sayi mono">'+fiyat(o[4])+'</td><td class="sayi mono">'+d+'</td><td>'+s+'</td></tr>'}).join('');
+    return '<tr class="tik" data-t="'+o[0]+'"><td class="mono">'+tarih(o[0])+'</td><td>'+BOL[o[1]]+'</td><td class="sayi mono">'+fiyat(o[3])+'</td><td class="sayi mono">'+fiyat(o[4])+'</td><td class="sayi mono">'+d+'</td><td class="sayi mono">'+(o[6]==null?'—':'<span class="'+(o[6]>=0?'iyi':'kotu')+'">'+(o[6]>=0?'+':'')+o[6].toFixed(2)+'%</span>')+'</td><td>'+s+'</td></tr>'}).join('');
   $('tablo').innerHTML=satir;
   $('tablo').addEventListener('click',function(e){var tr=e.target.closest('tr');if(!tr)return;
     document.querySelectorAll('#tablo tr.secili').forEach(function(x){x.classList.remove('secili')});tr.classList.add('secili');git(+tr.dataset.t)});

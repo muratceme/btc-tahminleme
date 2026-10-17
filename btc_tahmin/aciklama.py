@@ -151,7 +151,7 @@ def _ince_etiket(durum: str) -> str:
 
 def hedef_metni(hedef: str, yon: int, aralik: str = "15m") -> tuple[bool, str]:
     """(yükseliş mi, Türkçe açıklama)"""
-    dk = int(aralik.rstrip("m")) if aralik.endswith("m") else 15
+    dk = int(aralik[:-1]) * (60 if aralik.endswith("h") else 1) if aralik[:-1].isdigit() else 15
     if hedef in ("sonraki_mum", "sonraki_yesil"):
         return yon == 1, f"sonraki {aralik} mum {'YEŞİL' if yon == 1 else 'KIRMIZI'}"
     if hedef == "gun_sonu":

@@ -147,39 +147,44 @@ def yon_modelleri(o: pd.DataFrame, hedef: pd.DataFrame, hedef_adi: str = "gun_so
     return satirlar
 
 
-def dusus_riski(o: pd.DataFrame, hedef: pd.DataFrame) -> list[dict]:
-    """Volatilite rejimine ve kalan saate göre 'gün sonuna kadar max düşüş' sınırları.
+def _gun_ici_sinirlar(o: pd.DataFrame, seri: pd.Series, yukari: bool) -> list[tuple[float, float, int, float]]:
+    """Volatilite rejimi ve güne kalan saate göre gün içi en kötü hareket sınırları.
 
     Sınırlar eğitim döneminden (ilk %70) öğrenilir, tutarlılık son %30'da ölçülür.
-    """
-    dd = hedef["gun_ici_max_dusus"]
+    Dönen: [(seviye, test tutma oranı, test n, şu anki sınır %), ...]"""
     kalan = gun_sonuna_kalan_saat(o)
     vol_rejim = pd.qcut(o["atr_pct"].rank(method="first"), 3, labels=["dusuk", "orta", "yuksek"])
     kalan_kova = pd.cut(kalan, [0, 4, 8, 12, 16, 20, 24.01], labels=False)
-    df = pd.DataFrame({"dd": dd, "vol": vol_rejim, "kalan": kalan_kova}).dropna()
+    df = pd.DataFrame({"dd": seri, "vol": vol_rejim, "kalan": kalan_kova}).dropna()
     n = len(df)
     if n < 500:
         return []
     s = int(n * 0.7)
     egt, tst = df.iloc[:s], df.iloc[s:]
-    simdi_vol = vol_rejim.iloc[-1]
-    simdi_kalan = kalan_kova.iloc[-1]
-    satirlar = []
+    simdi_anahtar = (vol_rejim.iloc[-1], kalan_kova.iloc[-1])
+    out = []
     for seviye in config.TUTARLILIK_SEVIYELERI:
-        q = 1 - seviye
-        esikler = egt.groupby(["vol", "kalan"], observed=True)["dd"].quantile(q)
-        t_esik = tst.set_index(["vol", "kalan"]).index.map(lambda k: esikler.get(k, np.nan))
-        t_esik = np.asarray(t_esik, dtype=float)
+        esikler = egt.groupby(["vol", "kalan"], observed=True)["dd"].quantile(seviye if yukari else 1 - seviye)
+        t_esik = np.asarray(tst.set_index(["vol", "kalan"]).index.map(lambda k: esikler.get(k, np.nan)), dtype=float)
         ok = ~np.isnan(t_esik)
-        tutma = float((tst["dd"].to_numpy()[ok] >= t_esik[ok]).mean())
-        simdi = esikler.get((simdi_vol, simdi_kalan), np.nan)
-        if np.isnan(simdi) or tutma < config.MIN_TUTARLILIK:
-            continue
-        satirlar.append({
-            "tur": "DUSUS", "model": "Volatilite-rejimi dusus siniri",
-            "hedeflenen_seviye": seviye, "tutarlilik": round(tutma, 4), "test_n": int(ok.sum()),
-            "max_dusus_yuzde": round(float(simdi), 2),
-            "aciklama": f"%{int(seviye*100)} ihtimalle gün sonuna kadar fiyat %{abs(simdi):.2f}'den fazla düşmez",
-            "vol_rejim": str(simdi_vol),
-        })
-    return satirlar
+        d = tst["dd"].to_numpy()[ok]
+        tutma = float((d <= t_esik[ok]).mean() if yukari else (d >= t_esik[ok]).mean())
+        simdi = esikler.get(simdi_anahtar, np.nan)
+        if not np.isnan(simdi) and tutma >= config.MIN_TUTARLILIK:
+            out.append((seviye, tutma, int(ok.sum()), float(simdi)))
+    return out
+
+
+def dusus_riski(o: pd.DataFrame, hedef: pd.DataFrame) -> list[dict]:
+    """'Gün sonuna kadar fiyat en fazla ne kadar düşer' sınırları (long için stop referansı)."""
+    return [{
+        "tur": "DUSUS", "model": "Volatilite-rejimi dusus siniri",
+        "hedeflenen_seviye": sev, "tutarlilik": round(tut, 4), "test_n": n, "max_dusus_yuzde": round(v, 2),
+        "aciklama": f"%{int(sev * 100)} ihtimalle gün sonuna kadar fiyat %{abs(v):.2f}'den fazla düşmez",
+    } for sev, tut, n, v in _gun_ici_sinirlar(o, hedef["gun_ici_max_dusus"], yukari=False)]
+
+
+def yukselis_siniri(o: pd.DataFrame, hedef: pd.DataFrame) -> dict:
+    """'Gün sonuna kadar fiyat en fazla ne kadar yükselir' (short için stop referansı). {"%90": 1.7, ...}"""
+    return {f"%{int(round(tut * 100))}": round(v, 2)
+            for sev, tut, n, v in _gun_ici_sinirlar(o, hedef["gun_ici_max_yukselis"], yukari=True)}

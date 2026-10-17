@@ -1,4 +1,5 @@
-"""Genel ayarlar. Değiştirmek istediğin her şey burada."""
+"""Genel ayarlar. Sana özel olanlar (kasa, işlem türü, Telegram) ayarlar/kullanici.json dosyasında."""
+import json
 from pathlib import Path
 
 KOK = Path(__file__).resolve().parent.parent
@@ -11,7 +12,7 @@ SEMBOLLER = ["BTCUSDT", "ETHUSDT", "XRPUSDT"]
 ANA_SEMBOL = "BTCUSDT"
 
 # Desteklenen mum aralıkları. 10m Binance'te yok, 5m'den üretilir.
-ARALIKLAR = ["15m", "10m"]
+ARALIKLAR = ["15m", "10m", "5m", "30m", "1h", "4h"]   # 10m Binance'te yok, 5m'den üretilir
 VARSAYILAN_ARALIK = "15m"
 
 # Kaç günlük geçmiş indirilecek (15m * 540 gün ~ 52k mum)
@@ -63,3 +64,45 @@ HABER_RSS = [
     "https://www.theblock.co/rss.xml",
 ]
 HTTP_TIMEOUT = 20
+
+# --- Kullanıcı ayarları (ayarlar/kullanici.json; yoksa kullanici.ornek.json'daki varsayılanlar) ---
+def _kullanici() -> dict:
+    for ad in ("kullanici.json", "kullanici.ornek.json"):
+        f = AYAR_DIR / ad
+        if f.exists():
+            try:
+                return json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+    return {}
+
+
+KULLANICI = _kullanici()
+# İstersen ayarlar/kullanici.json'a "semboller": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT", "BNBUSDT"] yazarak coin ekle
+SEMBOLLER = [x.upper() for x in KULLANICI.get("semboller", SEMBOLLER)]
+
+# İşlem maliyeti: giriş + çıkış toplam yüzde (komisyon + kayma).
+# vadeli: taker %0,05 x 2 + kayma ~%0,04 = %0,14 · spot: %0,10 x 2 + kayma ~%0,04 = %0,24
+ISLEM_TURU = KULLANICI.get("islem_turu", "vadeli")
+ISLEM_MALIYETI_YUZDE = {"vadeli": 0.14, "spot": 0.24, **KULLANICI.get("islem_maliyeti_yuzde", {})}
+NET_ZARARLI_KURALLARI_ELE = True   # komisyon sonrası test döneminde zarar ettiren kural gösterilmez
+
+# Kural yaşlanması: son N oluşumdaki isabet, test tutarlılığından bu kadar düşükse uyar
+YASLANMA_PENCERE = 20
+YASLANMA_FARK = 0.15
+
+# Kasa simülasyonu
+SIM_BASLANGIC_KASA = float(KULLANICI.get("kasa_usd", 1000))
+SIM_ISLEM_ORANI = 1.0              # her işlemde kasanın tamamı, kaldıraçsız
+
+# Pozisyon önerisi
+KASA_USD = float(KULLANICI.get("kasa_usd", 1000))
+ISLEM_BASI_RISK_YUZDE = float(KULLANICI.get("islem_basi_risk_yuzde", 1.0))
+MAX_KALDIRAC = float(KULLANICI.get("max_kaldirac", 3))
+
+# Telegram bildirimi
+TELEGRAM = {"token": "", "chat_id": "", "min_tutarlilik": 0.80, **KULLANICI.get("telegram", {})}
+
+# Canlı karne: canlı isabeti bunun altına düşen kural (en az N canlı sinyalde) emekliye ayrılır
+KARNE_MIN_SINYAL = 10
+KARNE_EMEKLI_ORAN = 0.55

@@ -1,0 +1,12 @@
+{
+  "_aciklama": "Bu dosyayı 'kullanici.json' adıyla kopyalayıp kendi değerlerini yaz. kullanici.json git'e gönderilmez (Telegram anahtarın gizli kalır).",
+  "islem_turu": "vadeli",
+  "kasa_usd": 1000,
+  "islem_basi_risk_yuzde": 1,
+  "max_kaldirac": 3,
+  "telegram": {
+    "token": "",
+    "chat_id": "",
+    "min_tutarlilik": 0.80
+  }
+}

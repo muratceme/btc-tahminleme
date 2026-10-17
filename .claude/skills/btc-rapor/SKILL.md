@@ -42,8 +42,11 @@ Takvim olayı (FOMC, CPI vb.) eklemek için `takvim` listesine UTC tarihli kayı
    - **Sonraki mum**: `sonraki_mum.aktif_kurallar` varsa en iyi 5'i şu formatta yaz:
      "RSI 30-45 + MACD negatif-artan + Supertrend boğa + ... iken sonraki mum testte %78 YEŞİL geldi (n=46)".
    - **Derin tarama** (`derin.aktif`): %85+ tutarlılıklı, 3-7 koşullu kurallar. Varsa hedefi (ör. `ileri_3` = 3 mum sonra fiyat, `seri_3_yesil` = sonraki 3 mumun hepsi yeşil) ve koşulları düz Türkçe yaz; grafik için `cikti/grafik.html?s=<SEMBOL>_<aralik>&k=<id>` adresini ver.
-4. **Sonuç kutusu**: her coin için tek satır karar özeti — "Long için uygun / temkinli / uzak dur" (long risk <40 uygun, 40-60 temkinli, >60 uzak dur; test n küçükse bir kademe temkinli ol).
-5. Sonda HTML panonun yolunu ver: `cikti/rapor.html` (tarayıcıda açılabilir).
+   - **Para tarafı:** kurallardaki `performans.test.ort_net` (komisyon sonrası işlem başı net %) ve `kar_faktoru`; `ZAYIFLIYOR` (`performans.yaslaniyor`) olanları belirt. `pozisyon` doluysa giriş/stop/hedef/pozisyon büyüklüğünü yaz. `simulasyon.derin` varsa 1.000$'ın test dönemindeki sonucunu tek satırda ver (iyimser olduğunu belirt).
+4. **Canlı karne** (`karne`): genel ve son 7 gün canlı isabeti, beklenenle karşılaştır. Canlı isabet beklenenin çok altındaysa bunu açıkça uyar.
+5. **Makro** (`baglam.makro`, `baglam.etf`, `baglam.opsiyon`, `baglam.takvim_oto`): Nasdaq/DXY değişimi, ETF son gün akışı, put/call ve max pain, 48 saatteki önemli veriler.
+6. **Sonuç kutusu**: her coin için tek satır karar özeti — "Long için uygun / temkinli / uzak dur" (long risk <40 uygun, 40-60 temkinli, >60 uzak dur; test n küçükse bir kademe temkinli ol).
+7. Sonda HTML panonun yolunu ver: `cikti/rapor.html` (tarayıcıda açılabilir).
 
 Kurallar:
 - Tutarlılığı %70 altında olan hiçbir şeyi risk oranı gibi sunma.

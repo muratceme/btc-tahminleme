@@ -33,6 +33,10 @@ Python 3.10 veya daha yenisi gerekir. API anahtarı gerekmez; tüm kaynaklar her
 | `python -m btc_tahmin canli --ac` | **Önerilen.** Her 15m mumda yeniler, panoyu **http://localhost:8000** adresinde yayınlar. Aynı Wi-Fi'daki telefondan terminalde yazan `http://192.168.x.x:8000` adresiyle açılır |
 | `python -m btc_tahmin izle --dakika 15 --ac` | Her 15m mum kapanışında otomatik yeniler, pano dakikada bir tazelenir |
 | `python -m btc_tahmin ozet` | Son raporu terminalde tekrar gösterir |
+| `python -m btc_tahmin canli --tunel` | Evden dışarıdan (mobil veriyle) erişim: Cloudflare tüneliyle `https://….trycloudflare.com` adresi açar, panoyu otomatik şifreler. Bir kez `winget install --id Cloudflare.cloudflared` gerekir |
+| `python -m btc_tahmin telegram` | Telefona bildirim kurulumu (adım adım). Sonra güçlü sinyaller Telegram'a mesaj olarak gelir |
+| `python -m btc_tahmin karne` | **Canlı karne:** sistemin gerçek sinyallerinin isabeti ve komisyon sonrası net sonucu |
+| `python -m btc_tahmin rapor --aralik 1h` | Diğer zaman dilimleri: 5m, 10m, 15m, 30m, 1h, 4h |
 | `python -m btc_tahmin kontrol` | **Her metrik geldi mi?** ✓ geldi / ○ boş ama normal / ✗ hata (sebebiyle). `--kaynaklar` ile dış kaynakları şimdi tekrar dener |
 
 Kısa yollar: Windows'ta `calistir.bat`, macOS/Linux'ta `./calistir.sh`. İkisi de `canli` modunu başlatır.
@@ -63,6 +67,29 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
 - `rapor.json`: tüm sayılar (başka araçlara bağlamak için)
 - `kurallar_BTCUSDT_15m.csv`: bulunan tüm kombinasyon kuralları ve test istatistikleri
 
+## Para tarafı: komisyon, simülasyon, karne, pozisyon
+
+- **Komisyon sonrası net kazanç:** Her kural işlem gibi hesaplanır (giriş: sinyal mumu kapanışı, çıkış: hedefin bittiği mum).
+  Maliyet vadeli için işlem başı %0,14, spot için %0,24 (komisyon + kayma). Test döneminde komisyondan sonra **zarar ettiren kural gösterilmez**.
+  Kartlarda ortalama net, kâr faktörü ve son 20 oluşumdaki isabet yazar; düşüşteyse **ZAYIFLIYOR** rozeti çıkar.
+- **Kasa simülasyonu:** "Test döneminde bu sinyallere uysaydım 1.000$ ne olurdu?" Bakiye eğrisi, en kötü düşüş, aynı dönemde al-tut kıyası.
+  Kurallar bu dönem de dahil seçildiği için iyimserdir.
+- **Canlı karne:** Canlı modda her sinyal `veri/sinyal_gunlugu.csv` dosyasına kaydedilir, süresi dolunca gerçek fiyatla sonuçlandırılır.
+  Canlı isabet beklenenle yan yana gösterilir. Canlıda kötü giden kurallar (10+ sinyal, isabet %55 altı) otomatik emekliye ayrılır.
+- **Pozisyon hesaplayıcı:** Net gün sonu sinyali varsa kasana göre pozisyon büyüklüğü, stop (gün içi en kötü hareket sınırının ötesi)
+  ve hedef (1:1,5) hesaplanır. Riske edilen tutar genel piyasa puanıyla küçülür.
+
+### Kişisel ayarlar
+
+`ayarlar/kullanici.ornek.json` dosyasını `ayarlar/kullanici.json` adıyla kopyala ve düzenle:
+
+```json
+{"islem_turu": "vadeli", "kasa_usd": 1000, "islem_basi_risk_yuzde": 1, "max_kaldirac": 3,
+ "semboller": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"],
+ "telegram": {"token": "", "chat_id": "", "min_tutarlilik": 0.80}}
+```
+`kullanici.json` git'e gönderilmez; Telegram anahtarın gizli kalır. `semboller` ile SOL, BNB gibi coin ekleyebilirsin.
+
 ## Neye bakıyor?
 
 **İndikatörler:** RSI(14/7), Stochastic, StochRSI, MACD (histogram yönü, kesişimler, sıfır çizgisi), EMA 9/21/50/100/200 ve dizilimi,
@@ -78,7 +105,9 @@ seans (Asya/Avrupa/ABD), hafta sonu.
 
 **Piyasa geneli (puan kırımı için):** BTC.D, ETH.D, XRP.D, USDT.D, USDC.D, stablecoin toplamı, OTHERS.D,
 toplam piyasa değeri, Korku/Açgözlülük endeksi, funding oranı, açık pozisyon (OI) değişimi, long/short oranı,
-taker alış/satış, haber başlıkları (CoinDesk, Cointelegraph, Decrypt, anahtar kelime skoru), ekonomik takvim.
+taker alış/satış, likidasyon tahmini (OI + fiyat), haber başlıkları (6 kaynak, anahtar kelime skoru),
+Nasdaq/S&P vadeli, dolar endeksi, altın, ABD 10Y faiz ve BTC ile korelasyonları, spot BTC/ETH ETF akışları (deneysel),
+Deribit opsiyon put/call oranı ve max pain, otomatik ABD ekonomik takvimi (ForexFactory) + elle girilen takvim.
 
 ## Tutarlılık nasıl hesaplanıyor? (önemli)
 
@@ -117,4 +146,5 @@ tutarlılık seviyeleri (%90/85/80/75/70), gün sonu saat dilimi (TSİ).
 ```bash
 python -m tests.sentetik_test   # uçtan uca çalışıyor mu?
 python -m tests.sizinti_test    # 540 günlük rastgele veride sahte sinyal çıkıyor mu? (0 olmalı)
+python -m tests.karne_test      # canlı karne sinyalleri doğru sonuçlandırıyor mu?
 ```

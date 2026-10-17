@@ -214,6 +214,10 @@ def veri_seti_hazirla(mumlar: dict[str, pd.DataFrame], ana: str = config.ANA_SEM
     ters_min = o["low"][::-1].groupby(gun[::-1]).cummin()[::-1]
     sonraki_min = ters_min.groupby(gun).shift(-1)
     hedef["gun_ici_max_dusus"] = ((sonraki_min / o["close"] - 1) * 100).where(gs.notna())
+    # Gün sonuna kadar en yüksek yükseliş (short için en kötü durum) %
+    ters_max = o["high"][::-1].groupby(gun[::-1]).cummax()[::-1]
+    sonraki_max = ters_max.groupby(gun).shift(-1)
+    hedef["gun_ici_max_yukselis"] = ((sonraki_max / o["close"] - 1) * 100).where(gs.notna())
 
     # Çok mumlu hedefler (derin tarama): N mum sonra fiyat, sonraki N mumun hepsi aynı renk
     c = o["close"]

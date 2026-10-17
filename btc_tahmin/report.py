@@ -8,6 +8,10 @@ from . import config
 YESIL, KIRMIZI, SARI, GRI, KALIN, SIFIR = "\033[32m", "\033[31m", "\033[33m", "\033[90m", "\033[1m", "\033[0m"
 
 
+def _f(x: float) -> str:
+    return f"{x:,.2f}" if x >= 100 else f"{x:,.5f}"
+
+
 def _risk_renk(r):
     if r is None:
         return GRI
@@ -57,6 +61,10 @@ def terminal(rapor: dict) -> str:
                 sg = "VAR" if r["sinyal_var"] else "yok"
                 s.append(f"  {r['etiket']:<8} {r['tutarlilik']*100:>9.1f}% {r['test_n']:>6}  {sg:<7} "
                          f"{r['long_risk']:>5}% {r['short_risk']:>5}%  {r['kaynak'][:70]}")
+        pz = c.get("pozisyon") or {}
+        if pz.get("durum") == "var":
+            s.append(f"  Pozisyon hesabı: {pz['yon']} {pz['pozisyon_usd']:,.0f}$ (x{pz['kaldirac']}) · stop {_f(pz['stop'])} "
+                     f"({pz['stop_yuzde']}%) · hedef {_f(pz['hedef'])} · stop'ta kayıp ~{pz['risk_usd']:,.2f}$")
         ak = c["sonraki_mum"]["aktif_kurallar"]
         if ak:
             s.append(f"  {KALIN}Sonraki {c['aralik']} mum için ŞU AN AKTİF kombinasyonlar:{SIFIR}")
@@ -76,6 +84,8 @@ def terminal(rapor: dict) -> str:
                 s.append(f"   {renk}%{r['tutarlilik']*100:.0f} {metin}{SIFIR} (test n={r['test_n']}): "
                          + " + ".join(kosul_bilgisi(k)["etiket"] for k in r["kosullar"]))
     s.append("")
+    if rapor.get("karne"):
+        s.append(karne_metni(rapor["karne"]))
     sg = rapor.get("saglik") or []
     if sg:
         hata = [x for x in sg if x["durum"] == "hata"]
@@ -121,4 +131,25 @@ def saglik_tablosu(satirlar: list[dict]) -> str:
     say = {d: sum(1 for x in satirlar if x["durum"] == d) for d in ("ok", "normal", "hata")}
     s.append(f"\nToplam: ✓ {say['ok']} geldi · ○ {say['normal']} boş ama normal · ✗ {say['hata']} hata")
     s.append("○ = o an söylenecek güvenilir bir şey yok (hata değil).  ✗ = gelmesi gereken veri gelmedi, sebebi yanında.")
+    return "\n".join(s)
+
+
+def karne_metni(k: dict) -> str:
+    if not k or not k.get("toplam"):
+        return ("Canlı karne henüz boş. Sistem canlı modda çalıştıkça her sinyali kaydeder ve süresi dolunca "
+                "gerçek fiyatla sonuçlandırır.")
+    s = [f"{KALIN}CANLI KARNE{SIFIR} · ilk sinyal {k['ilk_sinyal'][:16]} · toplam {k['toplam']} sinyal, {k['bekleyen']} sonuç bekliyor"]
+
+    def satir(ad, o):
+        if not o.get("sinyal"):
+            return f"  {ad:<26} henüz sonuçlanmış sinyal yok"
+        renk = YESIL if o["isabet"] >= o["beklenen_isabet"] - 0.05 else (SARI if o["isabet"] >= 0.55 else KIRMIZI)
+        return (f"  {ad:<26} {o['sinyal']:>4} sinyal · isabet {renk}%{o['isabet']*100:.0f}{SIFIR} "
+                f"(beklenen %{o['beklenen_isabet']*100:.0f}) · ort. net {o['ort_net']:+.3f}% · toplam {o['toplam_net']:+.2f}%")
+    s.append(satir("Genel", k["genel"]))
+    s.append(satir("Son 7 gün", k["son_7_gun"]))
+    for ad, o in k["turler"].items():
+        s.append(satir(ad, o))
+    if k.get("emekli"):
+        s.append(f"  Canlıda kötü gittiği için emekliye ayrılan kural: {len(k['emekli'])}")
     return "\n".join(s)

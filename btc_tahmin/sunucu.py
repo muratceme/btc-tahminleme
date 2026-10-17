@@ -4,8 +4,14 @@ Aynı Wi-Fi'daki telefon da http://<bilgisayar-ip>:8000 adresinden açabilir.
 """
 from __future__ import annotations
 
+import base64
+import hmac
+import re
+import shutil
 import socket
+import subprocess
 import threading
+import time
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -20,8 +26,29 @@ b{color:#fbbf24}</style></head><body><div><b>◆ KRİPTO RİSK TERMİNALİ</b><p
 Bu sayfa 15 saniyede bir kendini yeniler.</p></div></body></html>"""
 
 
+SIFRE: str | None = None     # ayarlanırsa pano kullanıcı adı "kripto" + bu şifreyle korunur
+KULLANICI = "kripto"
+
+
 class _Isleyici(SimpleHTTPRequestHandler):
+    def _yetkili(self) -> bool:
+        if not SIFRE:
+            return True
+        b = self.headers.get("Authorization", "")
+        if not b.startswith("Basic "):
+            return False
+        try:
+            k, _, p = base64.b64decode(b[6:]).decode("utf-8").partition(":")
+        except ValueError:
+            return False
+        return hmac.compare_digest(k, KULLANICI) and hmac.compare_digest(p, SIFRE)
+
     def do_GET(self):  # noqa: N802
+        if not self._yetkili():
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="Kripto Risk Terminali"')
+            self.end_headers()
+            return
         if self.path in ("/", "/index.html"):
             self.path = "/rapor.html"
         if self.path.split("?")[0] == "/rapor.html" and not (config.CIKTI_DIR / "rapor.html").exists():
@@ -52,8 +79,44 @@ def yerel_ip() -> str | None:
         return None
 
 
+class _Sunucu(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        # Tarayıcı sayfa yenilenirken bağlantıyı erken kapatabilir; bu bir hata değil
+        import sys
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def baslat(port: int = 8000) -> ThreadingHTTPServer:
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
-    sunucu = ThreadingHTTPServer(("0.0.0.0", port), partial(_Isleyici, directory=str(config.CIKTI_DIR)))
+    sunucu = _Sunucu(("0.0.0.0", port), partial(_Isleyici, directory=str(config.CIKTI_DIR)))
     threading.Thread(target=sunucu.serve_forever, daemon=True).start()
     return sunucu
+
+
+def tunel(port: int, bekle_sn: int = 40) -> tuple[str | None, str]:
+    """cloudflared ile ücretsiz geçici bir https adresi açar (bilgisayar açık kaldıkça her yerden erişim).
+
+    Dönen: (adres ya da None, açıklama)."""
+    exe = shutil.which("cloudflared")
+    if not exe:
+        return None, ("cloudflared kurulu değil. Windows: 'winget install --id Cloudflare.cloudflared' · "
+                      "macOS: 'brew install cloudflared' · sonra komutu tekrar çalıştır.")
+    p = subprocess.Popen([exe, "tunnel", "--no-autoupdate", "--url", f"http://localhost:{port}"],
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+    bulunan: list[str] = []
+
+    def oku():
+        for satir in p.stdout:   # type: ignore[union-attr]
+            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", satir)
+            if m and not bulunan:
+                bulunan.append(m.group(0))
+    threading.Thread(target=oku, daemon=True).start()
+    for _ in range(bekle_sn * 2):
+        if bulunan or p.poll() is not None:
+            break
+        time.sleep(0.5)
+    if bulunan:
+        return bulunan[0], "Tünel açık. Bu pencere açık kaldıkça adres çalışır; her açılışta adres değişir."
+    return None, "Tünel açılamadı (cloudflared çıktısında adres bulunamadı)."

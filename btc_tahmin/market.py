@@ -14,7 +14,7 @@ from email.utils import parsedate_to_datetime
 import pandas as pd
 import requests
 
-from . import config
+from . import config, ekveri
 
 BASLIK = {"User-Agent": "btc-tahminleme/1.0"}
 # Bazı haber siteleri tanımadığı programları engelliyor; tarayıcı gibi görün
@@ -40,6 +40,9 @@ def _json(url, params=None, deneme: int = 4):
 
 # ---------------------------------------------------------------- dominanslar
 DOM_COINLER = {"btc": "bitcoin", "eth": "ethereum", "xrp": "ripple", "usdt": "tether", "usdc": "usd-coin"}
+_EK_DOM = {"SOLUSDT": ("sol", "solana"), "BNBUSDT": ("bnb", "binancecoin"), "DOGEUSDT": ("doge", "dogecoin"),
+           "ADAUSDT": ("ada", "cardano")}
+DOM_COINLER.update({k: v for s, (k, v) in _EK_DOM.items() if s in config.SEMBOLLER})
 
 
 def dominanslar() -> dict:
@@ -148,6 +151,10 @@ def vadeli(sembol: str) -> dict:
         a, b = float(d[0]["sumOpenInterestValue"]), float(d[-1]["sumOpenInterestValue"])
         out["oi_usd"] = round(b)
         out["oi_degisim_24s_yuzde"] = round((b / a - 1) * 100, 2)
+        out["oi_degisim_1s_yuzde"] = round((b / float(d[-2]["sumOpenInterestValue"]) - 1) * 100, 2)
+        k = _json(f"{f}/fapi/v1/klines", {"symbol": sembol, "interval": "1h", "limit": 2})
+        out["fiyat_degisim_1s_yuzde"] = round((float(k[-1][4]) / float(k[-2][4]) - 1) * 100, 2)
+        out["likidasyon_tahmini"] = ekveri.likidasyon_tahmini(out["oi_degisim_1s_yuzde"], out["fiyat_degisim_1s_yuzde"])
 
     def ls():
         d = _json(f"{f}/futures/data/globalLongShortAccountRatio", {"symbol": sembol, "period": "1h", "limit": 1})
@@ -246,7 +253,11 @@ def puan_kirimlari(baglam: dict, olaylar: dict, ana_sembol: str) -> dict:
 
     simdi = datetime.now(timezone.utc)
     yaklasan = []
-    for e in olaylar.get("takvim", []):
+    # Elle girilen takvim + otomatik ekonomik takvim (aynı saatteki aynı olay iki kez sayılmaz)
+    takvim = list(olaylar.get("takvim", []))
+    elle = {e.get("tarih", "")[:16] for e in takvim}
+    takvim += [e for e in (baglam.get("takvim_oto") or []) if e["tarih"][:16] not in elle]
+    for e in takvim:
         try:
             t = datetime.fromisoformat(e["tarih"].replace("Z", "+00:00"))
         except (KeyError, ValueError):
@@ -285,6 +296,24 @@ def puan_kirimlari(baglam: dict, olaylar: dict, ana_sembol: str) -> dict:
     if hb.get("jeopolitik_baslik_sayisi", 0) >= 3 and not any(k["kaynak"] == "manuel" for k in kalemler):
         kalemler.append({"ad": "Jeopolitik başlıklar yoğun (manuel kırım eklemeyi düşün)", "kirim": 3, "kaynak": "otomatik"})
 
+    mk = (baglam.get("makro") or {}).get("veriler", {})
+    nq = (mk.get("Nasdaq 100 vadeli") or {}).get("degisim_24s")
+    if nq is not None and nq <= -1.5:
+        kalemler.append({"ad": f"Nasdaq vadeli sert düşüşte ({nq:+.2f}%)", "kirim": 3, "kaynak": "otomatik"})
+    dxy = (mk.get("Dolar endeksi (DXY)") or {}).get("degisim_24s")
+    if dxy is not None and dxy >= 0.5:
+        kalemler.append({"ad": f"Dolar endeksi güçleniyor ({dxy:+.2f}%)", "kirim": 2, "kaynak": "otomatik"})
+    etf = ((baglam.get("etf") or {}).get("veriler") or {}).get("BTC")
+    if etf and etf["son"]["net_milyon_usd"] <= -200:
+        kalemler.append({"ad": f"BTC ETF'lerinden net çıkış ({etf['son']['net_milyon_usd']:,.0f} M$)", "kirim": 3, "kaynak": "otomatik"})
+    for s, v in (baglam.get("vadeli") or {}).items():
+        if v.get("likidasyon_tahmini"):
+            kalemler.append({"ad": f"{s.replace('USDT', '')}: {v['likidasyon_tahmini']}", "kirim": 3, "kaynak": "otomatik"})
+    op = (baglam.get("opsiyon") or {}).get("BTC")
+    if op and op.get("vade_saat_kaldi", 99) <= 24 and op.get("vade_oi_payi", 0) >= 0.15:
+        kalemler.append({"ad": f"Büyük BTC opsiyon vadesi {op['vade_saat_kaldi']:.0f} saat içinde (max pain {op['max_pain']:,.0f})",
+                         "kirim": 2, "kaynak": "otomatik"})
+
     if simdi.weekday() >= 5:
         kalemler.append({"ad": "Hafta sonu - düşük likidite", "kirim": 2, "kaynak": "otomatik"})
 
@@ -301,6 +330,18 @@ def baglam_topla(semboller) -> dict:
         except Exception as e:  # noqa: BLE001
             b[ad] = None
             b["hatalar"][ad] = str(e)
+    for ad, fn in (("makro", ekveri.makro), ("takvim_oto", ekveri.ekonomik_takvim), ("etf", ekveri.etf_akislari)):
+        try:
+            b[ad] = fn()
+        except Exception as e:  # noqa: BLE001
+            b[ad] = None
+            b["hatalar"][ad] = str(e)[:200]
+    b["opsiyon"] = {}
+    for para in ("BTC", "ETH"):
+        try:
+            b["opsiyon"][para] = ekveri.opsiyon(para)
+        except Exception as e:  # noqa: BLE001
+            b["hatalar"][f"opsiyon_{para}"] = str(e)[:200]
     b["vadeli"] = {}
     for s in semboller:
         try:

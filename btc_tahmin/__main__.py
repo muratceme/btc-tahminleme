@@ -6,6 +6,8 @@
     python -m btc_tahmin canli            # izle + http://localhost:8000 (telefondan da açılır)
     python -m btc_tahmin ozet             # son raporu (rapor.json) terminalde tekrar göster
     python -m btc_tahmin kontrol          # her metrik geldi mi? (son rapora göre)
+    python -m btc_tahmin telegram         # telefona bildirim kurulumu (adım adım)
+    python -m btc_tahmin karne            # canlı karne: sistemin gerçek sinyal performansı
     python -m btc_tahmin kontrol --kaynaklar  # dış kaynakları (dominans, F&G, vadeli, haber) şimdi tekrar dene
 """
 from __future__ import annotations
@@ -48,11 +50,24 @@ def main(argv=None):
             a.add_argument("--dakika", type=int, default=15)
         if ad == "canli":
             a.add_argument("--port", type=int, default=8000)
+            a.add_argument("--sifre", help="panoyu şifrele (kullanıcı adı: kripto)")
+            a.add_argument("--tunel", action="store_true",
+                           help="cloudflared ile her yerden erişilebilen https adresi aç (şifre otomatik konur)")
     alt.add_parser("ozet")
+    alt.add_parser("telegram")
+    alt.add_parser("karne")
     k = alt.add_parser("kontrol")
     k.add_argument("--kaynaklar", action="store_true", help="dış veri kaynaklarını şimdi tekrar dene")
     args = p.parse_args(argv)
 
+    if args.komut == "telegram":
+        from . import bildirim
+        bildirim.kurulum()
+        return
+    if args.komut == "karne":
+        from . import gunluk
+        print(report.karne_metni(gunluk.karne(gunluk.oku())))
+        return
     if args.komut == "kontrol":
         from . import market, saglik
         try:
@@ -75,7 +90,12 @@ def main(argv=None):
         return
     adres = None
     if args.komut == "canli":
+        import secrets
+
         from . import sunucu
+        if args.tunel and not args.sifre:
+            args.sifre = secrets.token_urlsafe(6)
+        sunucu.SIFRE = args.sifre
         try:
             sunucu.baslat(args.port)
         except OSError:
@@ -87,6 +107,13 @@ def main(argv=None):
         print(f"  PANO BU BİLGİSAYARDA :  {adres}")
         if ip:
             print(f"  TELEFONDAN (aynı Wi-Fi): http://{ip}:{args.port}")
+        if args.tunel:
+            dis, mesaj = sunucu.tunel(args.port)
+            print(f"  HER YERDEN (mobil veri dahil): {dis}" if dis else f"  TÜNEL: {mesaj}")
+            if dis:
+                print(f"  {mesaj}")
+        if args.sifre:
+            print(f"  GİRİŞ: kullanıcı adı 'kripto' · şifre '{args.sifre}'")
         print("  Bu pencereyi KAPATMA. Kapatırsan güncelleme durur.")
         print("=" * 60, flush=True)
         if args.ac:

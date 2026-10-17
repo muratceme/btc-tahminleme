@@ -5,10 +5,9 @@ import json
 import string
 from datetime import datetime, timezone
 
-import numpy as np
 import pandas as pd
 
-from . import config, market, miner, models
+from . import bildirim, config, gunluk, market, miner, models, performans
 from .features import gun_sonuna_kalan_saat, ince_kosullar, veri_seti_hazirla
 
 
@@ -20,7 +19,7 @@ def _kural_onbellek(sembol, aralik):
     return config.CIKTI_DIR / f"kurallar_{sembol}_{aralik}.json"
 
 
-KURAL_SURUM = 2   # önbellek biçimi değişince eski önbellek yok sayılır
+KURAL_SURUM = 3   # önbellek biçimi değişince eski önbellek yok sayılır
 
 
 def kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli: bool) -> dict[str, list[dict]]:
@@ -41,6 +40,8 @@ def kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli: bool) -> dict[str, l
         "gun_sonu": [r.sozluk() for r in miner.kurallari_ara(K, hedef["gun_sonu_yukari"], "gun_sonu", gun=gun)],
         "derin": derin_tarama(KT, hedef),
     }
+    # Komisyon sonrası test döneminde zarar ettiren kurallar elenir; kalanlara net kazanç bilgisi eklenir
+    kurallar = {k: performans.performans_ekle_ve_ele(v, o, KT, hedef) for k, v in kurallar.items()}
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
     dosya.write_text(json.dumps({"zaman": datetime.now(timezone.utc).isoformat(), "surum": KURAL_SURUM,
                                  "kurallar": kurallar}, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -62,17 +63,6 @@ def derin_tarama(KT: pd.DataFrame, hedef: pd.DataFrame) -> list[dict]:
     return sonuc
 
 
-def _hedef_tanimi(hedef_adi: str, o: pd.DataFrame, hedef: pd.DataFrame):
-    """(hedef serisi, bağımsızlık bloğu, gün serisi ya da None, çıkış fiyatı serisi)"""
-    c = o["close"]
-    if hedef_adi in ("sonraki_mum", "sonraki_yesil"):
-        return hedef["sonraki_yesil"], 1, None, c.shift(-1)
-    if hedef_adi == "gun_sonu":
-        return hedef["gun_sonu_yukari"], 1, _gun_serisi(o), hedef["gun_sonu_fiyat"]
-    n = int(hedef_adi.split("_")[1])
-    return hedef[hedef_adi], n, None, c.shift(-n)
-
-
 def grafik_verisi_yaz(sembol: str, aralik: str, o: pd.DataFrame, KT: pd.DataFrame, hedef: pd.DataFrame,
                       kurallar: dict[str, list[dict]]):
     """Grafik sayfası için mumlar + her kuralın geçmişteki tüm oluşumları (cikti/veri/<sembol>_<aralik>.js).
@@ -88,33 +78,27 @@ def grafik_verisi_yaz(sembol: str, aralik: str, o: pd.DataFrame, KT: pd.DataFram
     detay = {}
     # Sadece panoda gösterilen kurallar: her listeden en iyi 20 + şu an aktif olanlar
     tum = [r for liste in kurallar.values() for i, r in enumerate(liste) if i < 20 or r["aktif_su_an"]]
+    cv = o["close"].to_numpy()
     for r in tum:
-        if r["id"] in detay or not all(k in KT.columns for k in r["kosullar"]):
+        if r["id"] in detay:
             continue
-        y, blok, gun, cikis = _hedef_tanimi(r["hedef"], o, hedef)
+        ol = performans.olusumlar(r, o, KT, hedef)
+        if ol is None:
+            continue
+        # [zaman, dönem(0 eğitim,1 doğrulama,2 test,3 şimdi), isabet, giriş, çıkış, fiyat değişimi %, net işlem sonucu %]
+        olusum = [[int(zaman[i]), int(b), int(h), yuv(cv[i]), yuv(cv[j]), round(float((cv[j] / cv[i] - 1) * 100), 3),
+                   round(float(n), 3)]
+                  for i, j, b, h, n in zip(ol["idx"], ol["cikis_idx"], ol["bolum"], ol["isabet"], ol["net"])]
+        if ol["aktif"]:   # şu an aktif: sonucu henüz belli değil
+            olusum.append([int(zaman[-1]), 3, -1, yuv(cv[-1]), None, None, None])
         yon = 1 if r["yon"].startswith("YESIL") else 0
-        maske = KT[r["kosullar"]].all(axis=1).to_numpy()
-        gecerli = y.notna().to_numpy()
-        V = np.nonzero(gecerli)[0]
-        s1 = int(len(V) * config.EGITIM_ORANI)
-        s2 = int(len(V) * (config.EGITIM_ORANI + config.DOGRULAMA_ORANI))
-        idx = miner.ayristir(np.nonzero(maske & gecerli)[0], None if gun is None else gun.to_numpy(), blok)
-        olusum = []
-        yv, cv, ck = y.to_numpy(), o["close"].to_numpy(), cikis.to_numpy()
-        for i in idx:
-            sira = np.searchsorted(V, i)
-            bolum = 0 if sira < s1 else (1 if sira < s2 else 2)
-            olusum.append([int(zaman[i]), bolum, int(yv[i] == yon), yuv(cv[i]), yuv(ck[i]),
-                           round(float((ck[i] / cv[i] - 1) * 100), 3)])
-        if maske[-1]:   # şu an aktif: sonucu henüz belli değil
-            olusum.append([int(zaman[-1]), 3, -1, yuv(cv[-1]), None, None])
-        yukselis, metin = hedef_metni(r["hedef"], yon, aralik)
+        _, metin = hedef_metni(r["hedef"], yon, aralik)
         detay[r["id"]] = {
             "kosullar": [kosul_bilgisi(k) | {"ham": k} for k in r["kosullar"]],
-            "hedef": metin, "yukselis": yukselis, "blok": blok,
+            "hedef": metin, "yukselis": ol["yukselis"], "blok": ol["blok"],
             "tutarlilik": r["tutarlilik"], "test_n": r["test_n"], "egitim_oran": r["egitim_oran"],
             "dogrulama_oran": r["dogrulama_oran"], "taban_oran": r["taban_oran"], "p_deger": r["p_deger"],
-            "kaldirac_lift": r["kaldirac_lift"], "olusumlar": olusum,
+            "kaldirac_lift": r["kaldirac_lift"], "maliyet": performans.islem_maliyeti(), "olusumlar": olusum,
         }
     veri = {"sembol": sembol, "aralik": aralik, "mumlar": mumlar, "kurallar": detay,
             "olusturma": datetime.now(timezone.utc).isoformat()}
@@ -179,6 +163,39 @@ def risk_tablosu(yon_satirlari, kurallar_gs, dusus_satirlari, kirim) -> dict:
     return {"satirlar": satirlar, "ozet": ozet}
 
 
+def pozisyon_onerisi(fiyat: float, oz: dict, kirim: dict) -> dict:
+    """Kasa ve işlem başı riske göre pozisyon büyüklüğü, stop ve hedef (yalnızca hesap makinesi; tavsiye değil).
+
+    Stop, gün içi en kötü hareket sınırının en güvenli seviyesinden (%90 ise %90) alınır. Risk tutarı genel
+    piyasa puanıyla küçültülür (puan %80 ise risk de %80'ine iner). Hedef: 1,5 kat risk (1:1,5)."""
+    lr = oz.get("long_risk")
+    if lr is None or 40 <= lr <= 60:
+        return {"durum": "yok", "neden": "Tutarlı ve net bir gün sonu yön sinyali yok (long riski %40-60 arasında ya da hesaplanamadı)."}
+    long = lr < 40
+    sinirlar = oz.get("max_dusus") if long else oz.get("max_yukselis")
+    if not sinirlar:
+        return {"durum": "yok", "neden": "Stop seviyesi için gün içi hareket sınırı hesaplanamadı."}
+    seviye, sinir = max(sinirlar.items(), key=lambda kv: int(kv[0].strip("%")))
+    stop_yuzde = abs(float(sinir)) * 1.1 + 0.05          # sınırın biraz ötesi: gürültüyle stop olmasın
+    puan_carpani = max(0.0, kirim["genel_puan"] / 100)
+    risk_usd = config.KASA_USD * config.ISLEM_BASI_RISK_YUZDE / 100 * puan_carpani
+    pozisyon = risk_usd / (stop_yuzde / 100)
+    sinirli = pozisyon > config.KASA_USD * config.MAX_KALDIRAC
+    pozisyon = min(pozisyon, config.KASA_USD * config.MAX_KALDIRAC)
+    hedef_yuzde = stop_yuzde * 1.5
+    yon = 1 if long else -1
+    return {
+        "durum": "var", "yon": "LONG" if long else "SHORT", "giris": fiyat,
+        "stop": round(fiyat * (1 - yon * stop_yuzde / 100), 6), "stop_yuzde": round(stop_yuzde, 2),
+        "hedef": round(fiyat * (1 + yon * hedef_yuzde / 100), 6), "hedef_yuzde": round(hedef_yuzde, 2),
+        "pozisyon_usd": round(pozisyon, 2), "kaldirac": round(pozisyon / config.KASA_USD, 2),
+        "risk_usd": round(risk_usd if not sinirli else pozisyon * stop_yuzde / 100, 2),
+        "kasa_usd": config.KASA_USD, "islem_basi_risk_yuzde": config.ISLEM_BASI_RISK_YUZDE,
+        "puan_carpani": round(puan_carpani, 2), "stop_dayanagi": f"{seviye} güvenle gün içi en kötü hareket {sinir}%",
+        "kaldirac_siniri_uygulandi": sinirli,
+    }
+
+
 def _degisim_24s(o: pd.DataFrame):
     once = o[o["time"] <= o["time"].iloc[-1] - pd.Timedelta(hours=24)]
     if once.empty:
@@ -186,14 +203,22 @@ def _degisim_24s(o: pd.DataFrame):
     return round(float(o["close"].iloc[-1] / once["close"].iloc[-1] - 1) * 100, 2)
 
 
-def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: bool) -> dict:
+def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: bool, emekli: set | None = None) -> dict:
     o, K, hedef = veri_seti_hazirla(mumlar, ana=sembol)
     KT = pd.concat([K, ince_kosullar(o)], axis=1)
     kurallar = kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli)
+    # Canlı karnede kötü giden kurallar işaretlenir ve "şu an aktif" listelerinden çıkarılır
+    for liste in kurallar.values():
+        for r in liste:
+            r["emekli"] = r["id"] in (emekli or set())
+            if r["emekli"]:
+                r["aktif_su_an"] = False
     grafik_verisi_yaz(sembol, aralik, o, KT, hedef, kurallar)
+    simulasyon = {ad: performans.kasa_simulasyonu(kurallar[ad], o, KT, hedef) for ad in ("derin", "sonraki_mum")}
     yon = models.yon_modelleri(o, hedef, "gun_sonu_yukari") + models.yon_modelleri(o, hedef, "sonraki_yesil")
     dusus = models.dusus_riski(o, hedef)
     tablo = risk_tablosu(yon, kurallar["gun_sonu"], dusus, kirim)
+    tablo["ozet"]["max_yukselis"] = models.yukselis_siniri(o, hedef)
 
     son = o.iloc[-1]
     aktif_kosullar = [k for k, v in K.iloc[-1].items() if v]
@@ -221,6 +246,10 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         },
         "derin": {"aktif": [r for r in kurallar["derin"] if r["aktif_su_an"]][:30]},
         "kural_kutuphanesi": {k: v[:60] for k, v in kurallar.items()},
+        "simulasyon": simulasyon,
+        "pozisyon": pozisyon_onerisi(float(o["close"].iloc[-1]), tablo["ozet"], kirim),
+        "aktif_tum": [{k: r[k] for k in ("id", "hedef", "yon", "tutarlilik", "kosullar")}
+                      for liste in kurallar.values() for r in liste if r["aktif_su_an"]],
         "kural_sayisi": {k: len(v) for k, v in kurallar.items()},
     }
 
@@ -229,19 +258,32 @@ def calistir(aralik: str = config.VARSAYILAN_ARALIK, semboller=None, hizli: bool
              guncelle: bool = True, mumlar: dict | None = None, baglam: dict | None = None) -> dict:
     from . import data
     semboller = semboller or config.SEMBOLLER
+    mumlar_verildi = mumlar is not None
     if mumlar is None:
         mumlar = {s: data.mumlari_getir(s, aralik, guncelle=guncelle) for s in config.SEMBOLLER}
     if baglam is None:
         baglam = market.baglam_topla(config.SEMBOLLER)
+    if (baglam.get("makro") or {}).get("veriler") and config.ANA_SEMBOL in mumlar:
+        from . import ekveri
+        baglam["makro"]["btc_korelasyon"] = ekveri.btc_korelasyonu(baglam["makro"], mumlar[config.ANA_SEMBOL])
+        for v in baglam["makro"]["veriler"].values():
+            v.pop("seri", None)    # rapor dosyasını şişirmesin
+    canli = mumlar_verildi is False     # testlerde (dışarıdan mum verilince) gerçek günlüğe yazılmaz
     olaylar = market.olaylari_oku()
     kirim = market.puan_kirimlari(baglam, olaylar, config.ANA_SEMBOL)
+    gun = gunluk.sonuclandir(gunluk.oku(), mumlar) if canli else gunluk.oku().iloc[0:0]
     rapor = {
         "olusturma": datetime.now(timezone.utc).isoformat(),
         "aralik": aralik, "genel_puan": kirim, "baglam": baglam,
-        "coinler": {s: coin_analizi(s, aralik, mumlar, kirim, hizli) for s in semboller},
+        "coinler": {s: coin_analizi(s, aralik, mumlar, kirim, hizli, gunluk.emekliler(gun)) for s in semboller},
         "uyari": ("Bu sistem istatistiksel bir karar destek aracıdır, yatırım tavsiyesi değildir. "
                   "Tutarlılık oranları geçmiş TEST dönemine aittir; piyasa rejimi değişirse düşebilir."),
     }
+    gun, yeni = gunluk.kaydet(gun, rapor)
+    if canli:
+        gunluk.yaz(gun)
+        rapor["bildirim"] = bildirim.yeni_sinyaller(yeni)
+    rapor["karne"] = gunluk.karne(gun)
     from . import saglik
     rapor["saglik"] = saglik.kontrol(rapor)
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
