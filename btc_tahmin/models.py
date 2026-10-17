@@ -92,6 +92,21 @@ def _esik_bul(p, y, gun, hedef_oran, min_n):
     return None
 
 
+def _teshis(p, y, gun, min_n) -> dict:
+    """'Neden sinyal yok?' sorusu için: eşik seçimi döneminde, sinyalin geçmesi gereken kapıyla aynı
+    koşulda (en az min_n bağımsız örnek) herhangi bir güven eşiğinde ulaşılabilen en yüksek isabet."""
+    en_iyi, kapsama = 0.0, None
+    toplam = len(np.unique(gun)) if gun is not None else len(p)
+    for d in np.arange(0.0, 0.40, 0.01):
+        idx = _sec(np.abs(p - 0.5) >= d, gun)
+        if len(idx) < min_n:
+            break
+        isabet = float(((p[idx] > 0.5).astype(int) == y[idx]).mean())
+        if isabet > en_iyi:
+            en_iyi, kapsama = isabet, round(100 * len(idx) / max(1, toplam), 1)
+    return {"en_iyi_isabet": round(en_iyi, 4), "kapsama_yuzde": kapsama, "esik": config.MIN_TUTARLILIK}
+
+
 def yon_modelleri(o: pd.DataFrame, hedef: pd.DataFrame, hedef_adi: str = "gun_sonu_yukari") -> list[dict]:
     """Her model ve her tutarlılık seviyesi için (eşik, test isabeti, şu anki risk) üretir."""
     if not SKLEARN:
@@ -121,6 +136,7 @@ def yon_modelleri(o: pd.DataFrame, hedef: pd.DataFrame, hedef_adi: str = "gun_so
             "tur": "HAM", "model": f"{ad} ({hedef_adi})", "hedef": hedef_adi,
             "p_yukari_simdi": round(p_simdi, 4), "long_risk_yuzde": round(100 * (1 - p_simdi), 1),
             "modelin_genel_dogrulugu": round(genel_dogruluk, 4),
+            "teshis": _teshis(p[sec], y[sec], None if gun is None else gun[sec], min_n),
         })
         for hedef_oran in config.TUTARLILIK_SEVIYELERI:
             d = _esik_bul(p[sec], y[sec], None if gun is None else gun[sec], hedef_oran, min_n)

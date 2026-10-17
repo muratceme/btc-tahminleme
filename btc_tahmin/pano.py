@@ -205,7 +205,7 @@ def _baslik(metin: str, capa: str | None = None) -> str:
     return f'<div class="kart-baslik"><span>{metin}</span>{bilgi}</div>'
 
 
-def _gosterge(deger, alt_yazi: str, boyut_etiket: str = "LONG RİSKİ") -> str:
+def _gosterge(deger, alt_yazi: str, boyut_etiket: str = "LONG RİSKİ", ham=None) -> str:
     """Yarım daire risk göstergesi (0 = güvenli, 100 = riskli)."""
     def nokta(v, r):
         a = math.pi * (1 - v / 100)
@@ -223,6 +223,15 @@ def _gosterge(deger, alt_yazi: str, boyut_etiket: str = "LONG RİSKİ") -> str:
         parcalar.append(f'<line x1="100" y1="105" x2="{x:.1f}" y2="{y:.1f}" stroke="var(--yazi)" stroke-width="3" stroke-linecap="round"/>'
                         f'<circle cx="100" cy="105" r="6" fill="var(--yazi)"/>')
         metin = f'<text x="100" y="92" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="30" font-weight="800" fill="{renk}">%{deger:g}</text>'
+    elif ham is not None:
+        # Güvenilir sinyal yok: ham tahmin soluk ve kesikli gösterilir
+        x1, y1 = nokta(ham, 68)
+        x2, y2 = nokta(ham, 93)
+        parcalar.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="var(--soluk)" stroke-width="3" '
+                        f'stroke-linecap="round"/>')
+        metin = (f'<text x="100" y="84" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="24" font-weight="700" '
+                 f'fill="var(--soluk)">%{ham:g}</text><text x="100" y="98" text-anchor="middle" font-size="9" letter-spacing="1.5" '
+                 f'fill="var(--soluk2)">HAM · DÜŞÜK GÜVEN</text>')
     else:
         metin = '<text x="100" y="92" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="30" font-weight="800" fill="var(--soluk)">—</text>'
     return (f'<div class="gosterge"><svg viewBox="0 0 200 128" role="img" aria-label="{_e(boyut_etiket)} {deger}">'
@@ -268,6 +277,13 @@ def _dayanak_metni(c: dict) -> str:
                      f"tutarlılıkla ağırlıklı ortalaması: <b>%{oz['long_risk']}</b>. En güvenilir kaynak "
                      f"<b>{_e(_kaynak_adi(en['kaynak']))}</b>; geçmiş testte bu güven seviyesinde <b>%{en['tutarlilik']*100:.0f}</b> doğru çıktı.")
     else:
+        ts = oz.get("teshis") or []
+        if ts:
+            parca.append("<b>Neden sinyal yok?</b> Gün sonu yönünü tahmin eden modeller, güven eşiğinin seçildiği dönemde (en az 30 farklı gün) "
+                         + ", ".join(f"<b>{_e(_kaynak_adi(t['model']))}</b> genel %{t['genel']*100:.0f}, en emin olduğu günlerde bile en fazla "
+                                     f"<b>%{t['en_iyi_isabet']*100:.0f}</b>" for t in ts)
+                         + f" isabete ulaşabildi; gösterme eşiği %{int(config.MIN_TUTARLILIK*100)}. Yani şu an gün sonu yönü istatistiksel olarak "
+                         "yazı-turadan belirgin şekilde iyi tahmin edilemiyor. Sistem bu durumda sayı uydurmaz.")
         parca.append("Hiçbir model veya kombinasyon şu an <b>%70 ve üzeri</b> güvenle bir yön söyleyemiyor. "
                      f"Ham yapay zekâ tahmini long riski %{_e(oz.get('ham_model_long_risk'))}, ama bu tahminin genel isabeti "
                      f"%{round((oz.get('ham_model_dogrulugu') or 0) * 100)} olduğu için karar vermeye yetmez. <b>Bu durumda beklemek de bir pozisyondur.</b>")
@@ -313,7 +329,8 @@ def _risk_tablosu(c: dict) -> str:
             kaynak += '<div style="margin-top:4px">' + "".join(_cip(k) for k in r["kosullar"]) + "</div>"
         if "max_dusus" in r:
             durum = '<span class="rozet notr">SINIR</span>'
-            deg = f'<td class="sayi kotu" colspan="2">max {r["max_dusus"]}%</td>'
+            deg = (f'<td class="sayi" colspan="2"><span class="notr">yön söylemez</span><br>'
+                   f'<span class="kotu">max {r["max_dusus"]}%</span></td>')
             not_ = (f'%{r["tutarlilik"]*100:.0f} ihtimalle gün sonuna kadar fiyat <b>{abs(r["max_dusus"])}%</b>\'den fazla düşmez. '
                     f'Long açarsan stop\'u bunun biraz altına koymak mantıklı.')
         else:
@@ -372,6 +389,19 @@ def _net_satiri(p: dict) -> str:
             f'kazançta {t["ort_kazanc"]:+.2f}% / kayıpta {t["ort_kayip"]:+.2f}%{kf}{son}</div>')
 
 
+def _kirimli(r, kirim):
+    return None if r is None else round(min(99.0, r + kirim["toplam_kirim"] * (100 - r) / 100), 1)
+
+
+def _kpi_deger(deger, ham) -> str:
+    if deger is not None:
+        return f'<div class="d {_sinif(deger)}">%{deger}</div>'
+    if ham is not None:
+        return (f'<div class="d notr" title="Güvenilir sinyal yokken modelin eşiksiz tahmini">%{ham} '
+                f'<span style="font-size:10px;letter-spacing:.08em">HAM</span></div>')
+    return '<div class="d notr">—</div>'
+
+
 def _coin(c: dict, kirim: dict) -> str:
     oz = c["risk"]["ozet"]
     lr = oz.get("long_risk")
@@ -393,14 +423,14 @@ def _coin(c: dict, kirim: dict) -> str:
   </div>
   <div class="kart">
     {_baslik('Gün sonu long riski', 'risk-turleri')}
-    {_gosterge(lr, f"{oz['dayanak_sayisi']} tutarlı sinyal" if lr is not None else "tutarlı sinyal yok")}
+    {_gosterge(lr, f"{oz['dayanak_sayisi']} tutarlı sinyal" if lr is not None else "%70+ güvenle tutarlı sinyal yok", ham=oz.get("ham_model_long_risk"))}
     <div style="display:flex;justify-content:center"><div class="karar {k_sinif}">{k_metin}</div></div>
   </div>
   <div class="kart karar-kart">
     {_baslik('Özet göstergeler')}
     <div class="kpi-izgara">
-      <div class="kpi"><div class="e">Short riski</div><div class="d {_sinif(oz.get('short_risk'))}">{'%' + str(oz['short_risk']) if oz.get('short_risk') is not None else '—'}</div><div class="a">short açarsan zarar ihtimali</div></div>
-      <div class="kpi"><div class="e">Kırım dahil</div><div class="d {_sinif(oz.get('kirimli_long_risk'))}">{'%' + str(oz['kirimli_long_risk']) if oz.get('kirimli_long_risk') is not None else '—'}</div><div class="a">genel puan %{kirim['genel_puan']:g} ile</div></div>
+      <div class="kpi"><div class="e">Short riski</div>{_kpi_deger(oz.get('short_risk'), None if oz.get('ham_model_long_risk') is None else round(100 - oz['ham_model_long_risk'], 1))}<div class="a">short açarsan zarar ihtimali</div></div>
+      <div class="kpi"><div class="e">Kırım dahil</div>{_kpi_deger(oz.get('kirimli_long_risk'), _kirimli(oz.get('ham_model_long_risk'), kirim))}<div class="a">long riski, genel puan %{kirim['genel_puan']:g} ile</div></div>
       <div class="kpi"><div class="e">Max düşüş</div><div class="d kotu">{(str(md_en[1]) + '%') if md_en else '—'}</div><div class="a">{_e(md_en[0]) + ' güvenle, gün sonuna kadar' if md_en else 'hesaplanamadı'}</div></div>
       <div class="kpi"><div class="e">RSI · ADX</div><div class="d">{tek['RSI']} · {tek['ADX']}</div><div class="a">Supertrend {_e(tek['Supertrend'])}</div></div>
     </div>
@@ -727,7 +757,7 @@ def pano_html(rapor: dict, yenile_sn: int | None = None) -> str:
     sekmeler = "".join(
         f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>'
         f'<span class="mono {_sinif(c["risk"]["ozet"].get("long_risk"))}">'
-        f'{"%" + str(c["risk"]["ozet"]["long_risk"]) if c["risk"]["ozet"].get("long_risk") is not None else "—"}</span></button>'
+        f'{"%" + str(c["risk"]["ozet"]["long_risk"]) if c["risk"]["ozet"].get("long_risk") is not None else "bekle"}</span></button>'
         for s, c in coinler.items())
 
     hb = b.get("haberler") or {}

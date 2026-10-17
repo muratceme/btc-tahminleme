@@ -153,6 +153,8 @@ def risk_tablosu(yon_satirlari, kurallar_gs, dusus_satirlari, kirim) -> dict:
     if ham:
         ozet["ham_model_long_risk"] = round(sum(r["long_risk_yuzde"] for r in ham) / len(ham), 1)
         ozet["ham_model_dogrulugu"] = round(sum(r["modelin_genel_dogrulugu"] for r in ham) / len(ham), 4)
+        ozet["teshis"] = [{"model": r["model"].split(" (")[0], "genel": r["modelin_genel_dogrulugu"], **r["teshis"]}
+                          for r in ham if r.get("teshis")]
     dusus = [s for s in satirlar if s["tur"].startswith("Max")]
     if dusus:
         ozet["max_dusus"] = {f"%{int(round(s['tutarlilik'] * 100))}": s["max_dusus"] for s in dusus}
