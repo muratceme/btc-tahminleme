@@ -1,0 +1,18 @@
+{
+  "_aciklama": "Bu dosyayı sen düzenlersin. genel_puan_kirimlari modellere GİRMEZ; raporda ayrıca 'Genel Piyasa Puanı' olarak gösterilir. takvim'deki olaylar 24 saat içine girince otomatik kırım uygular (yuksek=8, orta=4, dusuk=2). Tarihler UTC (Z) olarak yazılır.",
+  "genel_puan_kirimlari": [
+    {
+      "ad": "İran savaşı / Orta Doğu gerilimi",
+      "kirim_yuzde": 10,
+      "aktif": true,
+      "not": "Savaşın ne zaman biteceği belli değil. Bitince aktif=false yap veya kırımı düşür."
+    }
+  ],
+  "takvim": [
+    {"tarih": "2026-10-28T18:00:00Z", "ad": "FOMC faiz kararı", "etki": "yuksek"},
+    {"tarih": "2026-10-28T18:30:00Z", "ad": "Powell basın toplantısı", "etki": "yuksek"},
+    {"tarih": "2026-12-09T19:00:00Z", "ad": "FOMC faiz kararı", "etki": "yuksek"},
+    {"tarih": "2026-11-06T13:30:00Z", "ad": "ABD Tarım Dışı İstihdam (NFP) - tarihi doğrula", "etki": "orta"},
+    {"tarih": "2026-11-12T13:30:00Z", "ad": "ABD TÜFE (CPI) - tarihi doğrula", "etki": "yuksek"}
+  ]
+}
