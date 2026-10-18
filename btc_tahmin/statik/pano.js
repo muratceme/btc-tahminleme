@@ -5,6 +5,7 @@ document.documentElement.classList.add('js');
     coin.forEach(function(c){c.hidden=c.id!==id});try{localStorage.setItem('kr_sekme',id)}catch(e){}}
   sek.forEach(function(s){s.addEventListener('click',function(){sec(s.dataset.hedef)})});
   var ilk=null;try{ilk=localStorage.getItem('kr_sekme')}catch(e){}
+  var hs=location.hash.slice(1);if(hs&&document.getElementById(hs)&&document.querySelector('.sekme[data-hedef="'+hs+'"]'))ilk=hs;
   if(sek.length){sec(ilk&&document.getElementById(ilk)?ilk:sek[0].dataset.hedef)}
   var ts=document.body.dataset.ts?new Date(document.body.dataset.ts):null,yas=document.getElementById('yas'),
       saat=document.getElementById('saat'),nokta=document.getElementById('nokta');

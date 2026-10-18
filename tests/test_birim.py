@@ -209,3 +209,20 @@ def test_umut_dilimler_ve_oran():
     assert [z["aralik"] for z in u["ozetler"]] == ["15m", "1h", "4h"]
     assert u["ozetler"][0]["hareket_bolu_maliyet"] < u["ozetler"][1]["hareket_bolu_maliyet"] < u["ozetler"][2]["hareket_bolu_maliyet"]
     assert set(u["dilimler"]) == {"1h", "4h"} and all(d["rejim_simdi"] in ("trend", "yatay") for d in u["dilimler"].values())
+
+
+def test_anlik_topla_bos_ve_dolu():
+    from btc_tahmin import anlik
+    cz = [{"zaman": "2026-01-10T12:00:00+00:00", "fiyat": 100.0, "sinyal": "LONG", "cikis_mum": 8, "maks_mum": 8, "pozisyonda": False,
+           "cikis": {"durum": "acik", "net": 0.2}}]
+    f = {"ad": "x", "istatistik": {"tum": {"islem": 5, "toplam_net": 1.0, "kar_faktoru": 1.5}}, "cizelge": cz, "kurallar": ["a"]}
+    rapor = {"olusturma": "2026-01-10T12:15:00+00:00", "coinler": {"BTCUSDT": {
+        "aralik": "15m", "son_mum_zamani": "2026-01-10T12:00:00+00:00", "fiyat": 100.0,
+        "yon": {"simdi": {"sinyal": "LONG", "guc": 0.5, "long_oy": 2, "short_oy": 0, "en_tutarli": 0.8, "cikis_mum": 3}, "gun_sonu": {"sinyal": "BEKLE", "egilim": {"yon": "SHORT", "olasilik": 0.6, "model_dogrulugu": 0.52}}},
+        "aktif_tum": [], "fable": {"s1": f}}}}
+    a = anlik.topla(rapor)
+    assert [r["kaynak"] for r in a["sinyaller"]] == ["Fable sinyalleri", "Sinyaller"]
+    assert a["sinyaller"][1]["cikis"]["mum"] == 3 and a["sinyaller"][1]["cikis"]["saat"] == "16:00"   # 12:00 UTC + 4 mum x 15 dk = 13:00 UTC = 16:00 TSİ
+    assert a["sinyaller"][0]["link"] == "fable.html?strat=s1#BTCUSDT" and len(a["egilimler"]) == 1
+    bos = anlik.topla({"olusturma": "x", "coinler": {}})
+    assert bos["sinyaller"] == [] and bos["acik_pozisyonlar"] == []

@@ -27,6 +27,7 @@ document.querySelectorAll('.fb-coin').forEach(function(kok){
       if(g)setTimeout(function(){grafik(g,V.mumlar,V.stratejiler[id]||[])},0)}});try{localStorage.setItem('kr_strat',id)}catch(e){}}
   dugmeler.forEach(function(b){b.addEventListener('click',function(){sec(b.dataset.strat)})});
   var ilk=null;try{ilk=localStorage.getItem('kr_strat')}catch(e){}
+  var qs=new URLSearchParams(location.search).get('strat');if(qs&&kok.querySelector('.strat[data-strat="'+qs+'"]'))ilk=qs;
   if(dugmeler.length){sec(ilk&&kok.querySelector('.strat[data-strat="'+ilk+'"]')?ilk:dugmeler[0].dataset.strat)}
   kok.querySelectorAll('.sz-hepsi').forEach(function(kutu){kutu.addEventListener('change',function(){kutu.closest('.strat').classList.toggle('bekle-goster',kutu.checked)})});
   kok.querySelectorAll('.serit i[data-satir]').forEach(function(h){h.addEventListener('click',function(){
@@ -35,8 +36,9 @@ document.querySelectorAll('.fb-coin').forEach(function(kok){
 });
 document.querySelectorAll('.coin').forEach(function(sec){
   var d=sec.querySelectorAll('.tf-dugme'),b=sec.querySelectorAll('.tf-blok');if(!d.length)return;
-  d.forEach(function(x){x.addEventListener('click',function(){d.forEach(function(y){y.setAttribute('aria-pressed',y===x)});
-    b.forEach(function(y){y.hidden=y.dataset.tf!==x.dataset.tf})})})});
+  function secTf(tf){d.forEach(function(y){y.setAttribute('aria-pressed',y.dataset.tf===tf)});b.forEach(function(y){y.hidden=y.dataset.tf!==tf})}
+  d.forEach(function(x){x.addEventListener('click',function(){secTf(x.dataset.tf)})});
+  var qt=new URLSearchParams(location.search).get('tf');if(qt&&sec.querySelector('.tf-blok[data-tf="'+qt+'"]'))secTf(qt)});
 // sekme değişince gizli grafik çizilmemiş olabilir: görünür olunca çiz
 new MutationObserver(function(){document.querySelectorAll('.fb-coin:not([hidden]) .strat:not([hidden]) .sz-grafik:not([data-cizildi])').forEach(function(g){
   var kok=g.closest('.fb-coin'),V=window.FB&&window.FB[kok.dataset.sembol];if(V)grafik(g,V.mumlar,V.stratejiler[g.dataset.stratGrafik]||[])})})
