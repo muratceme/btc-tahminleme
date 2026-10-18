@@ -197,3 +197,15 @@ def test_tarama_sadece_uc_donemde_arti():
         assert all(s["donemler"][d]["toplam_net"] > 0 for d in ("egitim", "dogrulama", "test"))
     sayfa = fable.tarama_sayfa_verisi(o, t)
     assert set(sayfa) == {s["id"] for s in t["secilen"]}
+
+
+def test_umut_dilimler_ve_oran():
+    from btc_tahmin import fable, umut
+    from btc_tahmin.features import veri_seti_hazirla
+    from tests.sentetik_test import sahte_mumlar
+    mumlar = {"BTCUSDT": sahte_mumlar(n=12000, tohum=7)}
+    o, _, _ = veri_seti_hazirla(mumlar, ana="BTCUSDT")
+    u = umut.calis(mumlar, "BTCUSDT", o, fable.tarama(o))
+    assert [z["aralik"] for z in u["ozetler"]] == ["15m", "1h", "4h"]
+    assert u["ozetler"][0]["hareket_bolu_maliyet"] < u["ozetler"][1]["hareket_bolu_maliyet"] < u["ozetler"][2]["hareket_bolu_maliyet"]
+    assert set(u["dilimler"]) == {"1h", "4h"} and all(d["rejim_simdi"] in ("trend", "yatay") for d in u["dilimler"].values())

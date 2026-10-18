@@ -367,7 +367,28 @@ def tarama(o: pd.DataFrame, ilerleme=None) -> dict:
             "olcutler": "eğitim ≥30 işlem, net>0, kâr faktörü ≥1,1 · doğrulama ≥10 işlem, net>0 · test ≥10 işlem, net>0, kâr faktörü ≥1,1"}
 
 
-def tarama_sayfa_verisi(o: pd.DataFrame, tarama_sonucu: dict) -> dict:
+def rejim_serisi(o: pd.DataFrame, esik: float = 25.0) -> np.ndarray:
+    """Piyasa rejimi: ADX > esik ise trendli, değilse yatay."""
+    return (o["adx"] > esik).fillna(False).to_numpy()
+
+
+def _rejim_istatistik(isl: list[dict], o: pd.DataFrame, rejim: np.ndarray) -> dict:
+    """Test dönemindeki işlemleri giriş anındaki rejime göre böler."""
+    s2 = int(len(o) * (config.EGITIM_ORANI + config.DOGRULAMA_ORANI))
+    kap = [x for x in isl if x["durum"] == "kapandi" and x["i"] >= s2]
+
+    def oz(d):
+        if not d:
+            return {"islem": 0}
+        net = np.array([x["net"] for x in d])
+        kaz, kay = net[net > 0], net[net <= 0]
+        return {"islem": len(d), "toplam_net": round(float(net.sum()), 3), "ort_net": round(float(net.mean()), 4),
+                "net_kazanma_orani": round(float((net > 0).mean()), 4),
+                "kar_faktoru": round(float(kaz.sum() / -kay.sum()), 2) if len(kay) and kay.sum() < 0 else None}
+    return {"trend": oz([x for x in kap if rejim[x["i"]]]), "yatay": oz([x for x in kap if not rejim[x["i"]]])}
+
+
+def tarama_sayfa_verisi(o: pd.DataFrame, tarama_sonucu: dict, rejim: np.ndarray | None = None) -> dict:
     """Seçilen varyantlar için fable.hesapla() ile aynı biçimde sayfa verisi (çizelge, son işlemler)."""
     adaylar = {a["id"]: a for a in _adaylar()}
     out = {}
@@ -377,6 +398,7 @@ def tarama_sayfa_verisi(o: pd.DataFrame, tarama_sonucu: dict) -> dict:
             continue
         isl = islemler(o, a)
         out[s["id"]] = {
+            "rejim": _rejim_istatistik(isl, o, rejim) if rejim is not None else None,
             "ad": s["ad"], "ozet": s["aile"], "kurallar": s["kurallar"], "renk": _RENKLER[k % len(_RENKLER)],
             "istatistik": {"tum": istatistik(isl, o), "son90": istatistik(isl, o, 90), "son30": istatistik(isl, o, 30)},
             "donemler": s["donemler"], "veri_gun": int((o["time"].iloc[-1] - o["time"].iloc[0]).days),

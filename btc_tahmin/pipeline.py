@@ -252,7 +252,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
     aktif_kosullar = [k for k, v in K.iloc[-1].items() if v]
     sonraki_aktif = [r for r in kurallar["sonraki_mum"] if r["aktif_su_an"]]
     sonraki_ml = [r for r in yon if r["tur"] == "YON" and r["hedef"] == "sonraki_yesil"]
-    return {
+    sonuc = {
         "sembol": sembol, "aralik": aralik,
         "son_mum_zamani": son["time"].isoformat(), "fiyat": float(son["close"]),
         "degisim_24s": _degisim_24s(o),
@@ -279,7 +279,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "yon": sinyal.hesapla(o, KT, kurallar, yon, aralik),
         "cizelge": sinyal.zaman_cizelgesi(o, KT, kurallar, yon, aralik),
         "fable": fable.hesapla(o),
-        "tarama": (lambda t: {**t, "sayfa": fable.tarama_sayfa_verisi(o, t)})(fable.tarama(o)),
+        "tarama": (lambda t: {**t, "sayfa": fable.tarama_sayfa_verisi(o, t, fable.rejim_serisi(o))})(fable.tarama(o)),
         "cizelge_mumlar": [[int((t - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1)), float(a), float(b), float(c_), float(d)]
                            for t, a, b, c_, d in zip(o["time"].iloc[-config.CIZELGE_MUM - 40:], o["open"].iloc[-config.CIZELGE_MUM - 40:],
                                                      o["high"].iloc[-config.CIZELGE_MUM - 40:], o["low"].iloc[-config.CIZELGE_MUM - 40:],
@@ -291,6 +291,9 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "veri_boslugu": veri_boslugu(mumlar[sembol], aralik),
         "sahte_kesif": sahte_kesif_oku(sembol, aralik),
     }
+    from . import umut
+    sonuc["umut"] = umut.calis(mumlar, sembol, o, sonuc["tarama"]) if aralik in ("5m", "10m", "15m", "30m") else None
+    return sonuc
 
 
 def _ilerleme(i: int, toplam: int, sembol: str) -> None:

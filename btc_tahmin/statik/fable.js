@@ -33,6 +33,10 @@ document.querySelectorAll('.fb-coin').forEach(function(kok){
     var tr=document.getElementById(h.dataset.satir);if(!tr)return;var st=tr.closest('.strat');st.classList.add('bekle-goster');var k=st.querySelector('.sz-hepsi');if(k)k.checked=true;
     tr.scrollIntoView({behavior:'smooth',block:'center'});tr.classList.add('vurgu');setTimeout(function(){tr.classList.remove('vurgu')},2000)})});
 });
+document.querySelectorAll('.coin').forEach(function(sec){
+  var d=sec.querySelectorAll('.tf-dugme'),b=sec.querySelectorAll('.tf-blok');if(!d.length)return;
+  d.forEach(function(x){x.addEventListener('click',function(){d.forEach(function(y){y.setAttribute('aria-pressed',y===x)});
+    b.forEach(function(y){y.hidden=y.dataset.tf!==x.dataset.tf})})})});
 // sekme değişince gizli grafik çizilmemiş olabilir: görünür olunca çiz
 new MutationObserver(function(){document.querySelectorAll('.fb-coin:not([hidden]) .strat:not([hidden]) .sz-grafik:not([data-cizildi])').forEach(function(g){
   var kok=g.closest('.fb-coin'),V=window.FB&&window.FB[kok.dataset.sembol];if(V)grafik(g,V.mumlar,V.stratejiler[g.dataset.stratGrafik]||[])})})

@@ -89,6 +89,8 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
 - **Strateji tarama (`tarama.html`):** beş strateji ailesinin ~400 varyantı (EMA çiftleri, RSI eşikleri, hacim filtresi, çıkış
   süresi, sadece long/short) denenir; veri %60 eğitim / %20 doğrulama / %20 test bölünür ve yalnızca üç dönemde de komisyon
   sonrası artı yazanlar gösterilir. Denenen aday sayısı ve her dönemin sonucu açıkça yazılır (şans payı için).
+- **Uzun vade (`umut.html`):** aynı tarama 1 saatlik ve 4 saatlik mumlarda; her zaman dilimi için tipik hareket ÷ komisyon
+  oranı, al-tut karşılaştırması ve geçen stratejilerin trendli / yatay piyasadaki ayrı sonuçları.
 - **Sinyaller sayfası (`sinyaller.html`, üst menüde "Sinyaller · 24 saat"):** son 24 saatin her mumu için kısa vade ve gün sonu
   sinyali, **çıkış ne zaman** (sinyali veren kaynakların hedefi: sonraki mum, 3 mum sonra, gün sonu…), çıkıştaki fiyat ve
   komisyon dahil sonuç; mum grafiğinde giriş/çıkış işaretleri; şerit görünümü. Varsayılan olarak sadece sinyal olan mumlar listelenir.
