@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import bildirim, config, gunluk, market, miner, models, performans, sinyal
+from . import bildirim, config, fable, gunluk, market, miner, models, performans, sinyal
 from .features import gun_sonuna_kalan_saat, ince_kosullar, veri_seti_hazirla
 
 
@@ -278,6 +278,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "pozisyon": pozisyon_onerisi(float(o["close"].iloc[-1]), tablo["ozet"], kirim),
         "yon": sinyal.hesapla(o, KT, kurallar, yon, aralik),
         "cizelge": sinyal.zaman_cizelgesi(o, KT, kurallar, yon, aralik),
+        "fable": fable.hesapla(o),
         "cizelge_mumlar": [[int((t - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1)), float(a), float(b), float(c_), float(d)]
                            for t, a, b, c_, d in zip(o["time"].iloc[-config.CIZELGE_MUM - 40:], o["open"].iloc[-config.CIZELGE_MUM - 40:],
                                                      o["high"].iloc[-config.CIZELGE_MUM - 40:], o["low"].iloc[-config.CIZELGE_MUM - 40:],

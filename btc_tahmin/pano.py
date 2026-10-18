@@ -583,7 +583,8 @@ def _makro_karti(b: dict) -> str:
 # ------------------------------------------------------------------ ortak iskelet
 def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str = "", yenile: int | None = None) -> str:
     menu = "".join(f'<a href="{u}" class="{"aktif" if aktif_sayfa == u else ""}">{a}</a>'
-                   for u, a in (("rapor.html", "Pano"), ("sinyaller.html", "Sinyaller · 24 saat"), ("nasil-calisir.html", "Nasıl çalışır?")))
+                   for u, a in (("rapor.html", "Pano"), ("sinyaller.html", "Sinyaller · 24 saat"), ("fable.html", "Fable sinyalleri"),
+                                ("nasil-calisir.html", "Nasıl çalışır?")))
     canli = ('<span class="nokta" id="nokta"><i></i> CANLI</span><span>Güncelleme: <b id="yas" class="mono">—</b></span>'
              if ts else "") + '<span id="saat" class="mono"></span>'
     return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8">
@@ -917,6 +918,7 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 “Sinyale uysaydın” sütunu, o anki sinyalin yönünde açılan işlemin sonucudur. ✓ fiyatın sinyal yönünde gittiğini gösterir.</p>
 <p class="kucuk">Kurallar yakın dönem verisiyle de test edildiği için bu tablo biraz iyimser olabilir. Gerçek ölçüm canlı karnededir.</p>
 <p><b>Sinyal yoksa “eğilim”:</b> %{int(config.MIN_TUTARLILIK * 100)}+ tutarlı hiçbir kaynak aktif değilse sistem BEKLE der; ama yanında modellerin o anki <b>eğilimini</b> de yazar (ör. “eğilim LONG %57 · model doğruluğu %54 · düşük güven”). Model doğruluğu, o modelin test dönemindeki genel isabetidir; %50 yazı-tura demektir. Eğilim işlem sinyali değildir, sadece “modeller hangi tarafa bakıyor” bilgisidir. Daha sık ama daha zayıf sinyal istersen ayarlar/kullanici.json içinde <span class="mono">"min_tutarlilik": 0.6</span> yazabilirsin; kurallar o eşikle yeniden aranır ve zayıf kaynaklar Wilson ağırlığıyla az söz hakkı alır.</p>
+<p><b>Fable sinyalleri sayfası:</b> madencilikten bağımsız, kuralları baştan yazılmış dört klasik strateji (trend takibi, ortalamaya dönüş, sıkışma kırılımı, momentum teyitli). Kurallar veriden seçilmediği için seçim yanlılığı yoktur; tüm geçmişteki işlem sonucu, kâr faktörü, max düşüş ve kayıp serisi olduğu gibi gösterilir. Her stratejinin çıkış kuralı bellidir (Supertrend dönünce, orta banda dönünce, N mum sonra…). Son 24 saat şeridi, grafik ve tablo Sinyaller sayfasıyla aynı mantıktadır.</p>
 <p><b>Sinyaller sayfası (son 24 saat):</b> Üst menüdeki <a href="sinyaller.html">Sinyaller · 24 saat</a> sayfası aynı hesabı son 24 saatin <b>her mumu</b> için yapar. Her sinyalin yanında <b>“Çıkış ne zaman?”</b> yazar: o sinyali veren kaynakların hedefi (sonraki mum, 3 mum sonra, gün sonu…). Birden çok kaynak farklı çıkış istiyorsa ağırlığı en yüksek olan ufuk “önerilen çıkış”, en uzun olanı “en geç” olarak gösterilir. “Sonuç” sütunu, sinyal mumunun kapanışında girip önerilen çıkış mumunda çıkmanın komisyon dahil getirisidir; çıkış mumu daha gelmediyse AÇIK yazar. Grafikte ▲▼ giriş, ● çıkış ve sonucu gösterir; şeritte bir hücreye tıklayınca tabloda o mum açılır.</p>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """
 <div class="tablo-sar"><table><thead><tr><th>Ad</th><th>Ne söyler?</th><th>Tutarlılık neyi ölçer?</th></tr></thead><tbody>
@@ -1196,3 +1198,110 @@ Pano'daki “geriye dönük” kartı sadece son 4 mumu gösterir; burası tamam
 <script src="statik/sinyaller.js?v={_SV}"></script>
 <footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
     return _iskelet("Sinyaller · 24 saat · Kripto Risk Terminali", "sinyaller.html", govde, "", rapor["olusturma"], yenile_sn)
+
+
+# ------------------------------------------------------------------ Fable sinyalleri (hazır stratejiler)
+def _fable_istatistik_kutu(ad: str, st: dict, vurgu: bool = False) -> str:
+    if not st.get("islem"):
+        return (f'<div class="kpi"><div class="e">{_e(ad)}</div><div class="d">—</div>'
+                f'<div class="a">kapanmış işlem yok{(" · " + str(st["acik"]) + " açık") if st.get("acik") else ""}</div></div>')
+    kf = f"{st['kar_faktoru']:.2f}" if st.get("kar_faktoru") is not None else "∞"
+    renk = "iyi" if st["toplam_net"] > 0 else "kotu"
+    return (f'<div class="kpi"><div class="e">{_e(ad)}</div>'
+            f'<div class="d {renk}{" dev" if vurgu else ""}">{st["toplam_net"]:+.1f}%</div>'
+            f'<div class="a">{st["islem"]} işlem · yön doğru %{st["isabet"] * 100:.0f} · komisyon sonrası artı %{st["net_kazanma_orani"] * 100:.0f}<br>'
+            f'işlem başı {st["ort_net"]:+.3f}% · kâr faktörü {kf} · max düşüş {st["max_dusus"]}%<br>'
+            f'en uzun kayıp serisi {st["en_uzun_kayip_serisi"]} · ort. süre {st["ort_sure_mum"]} mum</div></div>')
+
+
+def _fable_strateji(sembol: str, aralik: str, sid: str, f: dict, maliyet: float) -> str:
+    cz = f["cizelge"]
+    sin = [r for r in cz if r["sinyal"] != "BEKLE"]
+    kap = [r["cikis"] for r in sin if r["cikis"] and r["cikis"]["durum"] == "kapandi"]
+    hucre = []
+    for k, r in enumerate(cz):
+        sinif = {"LONG": "L", "SHORT": "S"}.get(r["sinyal"], "pozisyonda" if r["pozisyonda"] else "")
+        if r["cikis"] and r["cikis"]["durum"] == "acik":
+            sinif += " acik"
+        bas = f"{_tsi(r['zaman'])} TSİ · {r['sinyal']}" + (" · pozisyonda" if r["pozisyonda"] and r["sinyal"] == "BEKLE" else "")
+        hucre.append(f'<i class="{sinif}" title="{bas}" data-satir="fb-{sembol}-{sid}-{k}"></i>')
+    satir = []
+    for k, r in enumerate(cz):
+        if r["sinyal"] == "BEKLE":
+            satir.append(f'<tr id="fb-{sembol}-{sid}-{k}" class="bekle"><td><b>{_tsi(r["zaman"])}</b><div class="cok-kucuk">TSİ</div></td>'
+                         f'<td class="sayi mono">{_fiyat(r["fiyat"])}</td><td><span class="rozet notr">{"● pozisyonda" if r["pozisyonda"] else "● BEKLE"}</span></td>'
+                         '<td>—</td><td class="sayi mono">—</td><td class="sayi mono">—</td></tr>')
+            continue
+        c_ = r["cikis"]
+        if c_["durum"] == "acik":
+            sonuc = f'<span class="rozet orta">AÇIK</span><div class="cok-kucuk">şu an {_yuzde(c_["net"])}</div>'
+            cikis = f'<b>en geç {r["maks_mum"]} mum sonra</b><div class="cok-kucuk">~{_tsi(c_["beklenen_zaman"])} TSİ ya da çıkış koşulu gelince</div>'
+        else:
+            sonuc = f'{_yuzde(c_["net"])} ' + ('<span class="rozet iyi">✓</span>' if c_["dogru"] else '<span class="rozet kotu">✕</span>')
+            cikis = f'<b>{c_["mum"]} mum sonra</b><div class="cok-kucuk">{_tsi(c_["zaman"])} TSİ</div>'
+        satir.append(f'<tr id="fb-{sembol}-{sid}-{k}"><td><b>{_tsi(r["zaman"])}</b><div class="cok-kucuk">TSİ</div></td>'
+                     f'<td class="sayi mono">{_fiyat(r["fiyat"])}</td><td>{_yon_rozeti(r["sinyal"])}</td><td>{cikis}</td>'
+                     f'<td class="sayi mono">{_fiyat(c_["fiyat"])}</td><td class="sayi mono">{sonuc}</td></tr>')
+    son = "".join(
+        f'<tr><td>{_tsi(x["zaman"])} <span class="cok-kucuk">{x["zaman"][5:10]}</span></td><td>{_yon_rozeti(x["yon"])}</td>'
+        f'<td>{x["mum"]} mum</td><td class="sayi mono">{_yuzde(x["net"]) if x["durum"] == "kapandi" else "<span class=\"rozet orta\">AÇIK</span>"}</td></tr>'
+        for x in f["son_islemler"])
+    st = f["istatistik"]
+    net24 = sum(c["net"] for c in kap)
+    return f"""<div class="strat" data-strat="{sid}" hidden>
+<div class="kart bolum"><div class="kart-baslik"><span style="color:{f['renk']}">◆ {_e(f['ad'])} · {_e(f['ozet'])}</span></div>
+<ul class="liste kucuk">{"".join(f"<li><span>{_e(k)}</span></li>" for k in f["kurallar"])}</ul>
+<p class="cok-kucuk">Bu kurallar baştan yazıldı, veriden seçilmedi; aşağıdaki sonuçlar <b>tüm geçmişin</b> ({f['veri_gun']} gün) olduğu gibi dökümüdür, seçim yanlılığı yoktur.
+Tek pozisyon: pozisyon açıkken gelen sinyal atlanır. Komisyon (işlem başı %{maliyet:g}) ve vadelide funding düşülmüştür. Kasa getirisi: her işlemde kasanın tamamı, kaldıraçsız.</p>
+<div class="kpi-izgara kpi-4">{_fable_istatistik_kutu(f"Tüm geçmiş · {f['veri_gun']} gün", st["tum"], True)}{_fable_istatistik_kutu("Son 90 gün", st["son90"])}{_fable_istatistik_kutu("Son 30 gün", st["son30"])}
+<div class="kpi"><div class="e">Son 24 saat</div><div class="d {"iyi" if net24 > 0 else ("kotu" if net24 < 0 else "")}">{len(sin)} sinyal</div>
+<div class="a">{sum(1 for r in sin if r["sinyal"] == "LONG")} long · {sum(1 for r in sin if r["sinyal"] == "SHORT")} short · kapananlarda net {net24:+.2f}% · yön doğru {sum(1 for c in kap if c["dogru"])}/{len(kap)}</div></div></div>
+<p class="cok-kucuk" style="margin-top:10px">Son 24 saat şeridi: yeşil long girişi, kırmızı short girişi, gri pozisyon açık, kesikli çerçeve: çıkış henüz gelmedi.</p>
+<div class="serit">{"".join(hucre)}</div><div class="serit-saat"><span>{_tsi(cz[0]["zaman"]) if cz else ""}</span><span>{_tsi(cz[-1]["zaman"]) if cz else ""} TSİ</span></div>
+<div class="sz-grafik" data-strat-grafik="{sid}"></div></div>
+<div class="iki-sutun">
+<div class="kart bolum"><div class="kart-baslik"><span>Son 24 saat · mum mum</span>
+<label class="kucuk" style="text-transform:none;letter-spacing:0;font-weight:500"><input type="checkbox" class="sz-hepsi"> BEKLE satırlarını da göster</label></div>
+<div class="tablo-sar"><table><thead><tr><th>Saat</th><th class="sayi">Fiyat</th><th>Sinyal</th><th>Çıkış ne zaman?</th><th class="sayi">Çıkış fiyatı</th><th class="sayi">Sonuç (net)</th></tr></thead>
+<tbody>{"".join(satir) or '<tr><td colspan="6" class="kucuk">Son 24 saatte sinyal yok.</td></tr>'}</tbody></table></div></div>
+<div class="kart bolum"><div class="kart-baslik"><span>Son 15 işlem (tüm geçmiş)</span></div>
+<div class="tablo-sar"><table><thead><tr><th>Giriş</th><th>Yön</th><th>Süre</th><th class="sayi">Net</th></tr></thead><tbody>{son or '<tr><td colspan="4" class="kucuk">İşlem yok.</td></tr>'}</tbody></table></div></div>
+</div></div>"""
+
+
+def _fable_coin(c: dict) -> str:
+    sembol, aralik = c["sembol"], c["aralik"]
+    fb = c.get("fable") or {}
+    maliyet = (c.get("yon") or {}).get("maliyet_yuzde", 0)
+    dugme = "".join(
+        f'<button class="ufuk-dugme strat-dugme" data-strat="{sid}" aria-pressed="{"true" if i == 0 else "false"}" style="border-left:3px solid {f["renk"]}">'
+        f'{_e(f["ad"])} <span class="mono cok-kucuk {"iyi" if (f["istatistik"]["tum"].get("toplam_net") or 0) > 0 else "kotu"}">'
+        f'{(f["istatistik"]["tum"].get("toplam_net") or 0):+.0f}%</span></button>'
+        for i, (sid, f) in enumerate(fb.items()))
+    return (f'<section class="coin sz-coin fb-coin" id="{_e(sembol)}" data-sembol="{_e(sembol)}">'
+            f'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span class="kucuk">Strateji:</span>{dugme}</div>'
+            + "".join(_fable_strateji(sembol, aralik, sid, f, maliyet) for sid, f in fb.items()) + "</section>")
+
+
+def fable_html(rapor: dict, yenile_sn: int | None = None) -> str:
+    import json as _json
+    coinler = rapor["coinler"]
+    sekmeler = "".join(
+        f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>'
+        f'<span class="cok-kucuk mono">{sum(1 for f in (c.get("fable") or {}).values() for r in f["cizelge"] if r["sinyal"] != "BEKLE")} sinyal / 24s</span></button>'
+        for s, c in coinler.items())
+    veri = {s: {"mumlar": c.get("cizelge_mumlar") or [],
+                "stratejiler": {sid: [{"zaman": r["zaman"], "sinyal": r["sinyal"], "cikis": r["cikis"]} for r in f["cizelge"]]
+                                for sid, f in (c.get("fable") or {}).items()}} for s, c in coinler.items()}
+    govde = f"""<main>
+<div class="kart bolum"><p class="kucuk" style="margin:0"><b>Fable sinyalleri:</b> benim tasarladığım dört klasik strateji. Kuralları veriden “bulunmadı”, baştan yazıldı; bu yüzden seçim yanlılığı yok ve
+bütün geçmişteki sonuç olduğu gibi gösteriliyor. Her stratejinin <b>çıkış kuralı</b> da belli (zamanla ya da koşulla). Üstteki düğmelerle strateji seç;
+şerit, grafik ve tablo Sinyaller sayfasıyla aynı mantıkta. Kâr faktörü 1'in altındaysa ya da son 90 gün eksideyse o strateji bu piyasada çalışmıyor demektir, ben de öyle derim.</p></div>
+<div class="sekmeler" role="tablist">{sekmeler}</div>
+{"".join(_fable_coin(c) for c in coinler.values())}
+</main>
+<script>window.FB={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
+<script src="statik/lightweight-charts.standalone.production.js"></script>
+<script src="statik/fable.js?v={_SV}"></script>
+<footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
+    return _iskelet("Fable sinyalleri · Kripto Risk Terminali", "fable.html", govde, "", rapor["olusturma"], yenile_sn)

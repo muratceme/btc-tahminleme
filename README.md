@@ -81,6 +81,11 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
   düşük güven"). Bu işlem sinyali değildir; son 24 saatte kaç kez doğru çıktığı Sinyaller sayfasında sayılır. Daha sık ama
   daha zayıf sinyal istersen `ayarlar/kullanici.json` içinde `"min_tutarlilik": 0.6` yaz (kurallar yeniden aranır;
   Wilson ağırlığı sayesinde zayıf kaynaklar oylamada az söz hakkı alır).
+- **Fable sinyalleri (`fable.html`):** madencilikten bağımsız, kuralları baştan yazılmış dört klasik strateji: trend takibi
+  (EMA dizilimi + Supertrend + ADX), ortalamaya dönüş (1s trend yönünde RSI/Bollinger dönüşü), sıkışma kırılımı (Bollinger
+  sıkışması + hacimli Keltner kırılımı), momentum teyitli (MACD kesişimi + 4s trend + alıcı baskısı). Her birinin çıkış kuralı
+  bellidir. Seçim yanlılığı olmadığı için tüm geçmişteki sonuç (kâr faktörü, max düşüş, kayıp serisi) olduğu gibi gösterilir;
+  üstteki düğmelerle strateji seçilir, şerit/grafik/tablo Sinyaller sayfasıyla aynıdır.
 - **Sinyaller sayfası (`sinyaller.html`, üst menüde "Sinyaller · 24 saat"):** son 24 saatin her mumu için kısa vade ve gün sonu
   sinyali, **çıkış ne zaman** (sinyali veren kaynakların hedefi: sonraki mum, 3 mum sonra, gün sonu…), çıkıştaki fiyat ve
   komisyon dahil sonuç; mum grafiğinde giriş/çıkış işaretleri; şerit görünümü. Varsayılan olarak sadece sinyal olan mumlar listelenir.

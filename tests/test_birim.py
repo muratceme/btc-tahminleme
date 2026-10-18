@@ -167,3 +167,20 @@ def test_saglik_bos_rapor():
     satirlar = saglik.kontrol({"baglam": {}, "coinler": {}, "karne": {}, "genel_puan": {}})
     assert any(x["durum"] == "hata" for x in satirlar)
     assert set(saglik.ozet(satirlar)) == {"ok", "normal", "hata"}
+
+
+# ------------------------------------------------------------------ fable stratejileri
+def test_fable_islemler_cakismaz_ve_cikis_sinirli():
+    from btc_tahmin import fable
+    from btc_tahmin.features import veri_seti_hazirla
+    from tests.sentetik_test import sahte_mumlar
+    o, _, _ = veri_seti_hazirla({"BTCUSDT": sahte_mumlar(n=6000, tohum=3)}, ana="BTCUSDT")
+    for st in fable.STRATEJILER:
+        isl = fable.islemler(o, st)
+        for a, b in zip(isl, isl[1:]):
+            assert b["i"] > a["j"], st["id"]                       # tek pozisyon: giriş bir öncekinin çıkışından sonra
+        assert all(x["j"] - x["i"] <= x["maks_mum"] for x in isl), st["id"]
+        cz = fable.cizelge(o, isl, mum=50)
+        assert len(cz) == 51 and all(r["sinyal"] in ("LONG", "SHORT", "BEKLE") for r in cz)
+    r = fable.hesapla(o)
+    assert set(r) == {s["id"] for s in fable.STRATEJILER}

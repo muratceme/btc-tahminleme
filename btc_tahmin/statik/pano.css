@@ -124,7 +124,8 @@ footer{max-width:1360px;margin:0 auto;padding:24px 16px 40px;color:var(--soluk2)
 /* sinyaller sayfası */
 .serit{display:grid;grid-template-columns:repeat(97,1fr);gap:1px;height:22px;margin:4px 0 2px}
 .serit i{display:block;border-radius:2px;background:rgba(255,255,255,.07);cursor:pointer}.serit i.L{background:var(--iyi)}.serit i.S{background:var(--kotu)}
-.serit i.zayif{opacity:.35}
+.serit i.zayif{opacity:.35}.serit i.pozisyonda{background:rgba(255,255,255,.22)}
+.strat tr.bekle{display:none}.strat.bekle-goster tr.bekle{display:table-row}
 .serit i.acik{outline:1px dashed var(--altin);outline-offset:-1px}
 .serit-saat{display:flex;justify-content:space-between;font-size:10px;color:var(--soluk2);font-family:var(--mono)}
 .sz-grafik{width:100%;height:360px;margin-top:8px}
