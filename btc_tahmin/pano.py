@@ -1268,7 +1268,8 @@ def _fable_strateji(sembol: str, aralik: str, sid: str, f: dict, maliyet: float)
     return f"""<div class="strat" data-strat="{sid}" hidden>
 <div class="kart bolum"><div class="kart-baslik"><span style="color:{f['renk']}">◆ {_e(f['ad'])} · {_e(f['ozet'])}</span></div>
 <ul class="liste kucuk">{"".join(f"<li><span>{_e(k)}</span></li>" for k in f["kurallar"])}</ul>
-<p class="cok-kucuk">Bu kurallar baştan yazıldı, veriden seçilmedi; aşağıdaki sonuçlar <b>tüm geçmişin</b> ({f['veri_gun']} gün) olduğu gibi dökümüdür, seçim yanlılığı yoktur.
+<p class="cok-kucuk">{("Bu varyant <b>tarama ile seçildi</b>: eğitim dönemi sonucu iyimserdir (orada seçildi), asıl not hiç görülmemiş TEST dönemidir; tüm geçmiş kutusu üç dönemin toplamıdır." if f.get("donemler") else
+f"Bu kurallar baştan yazıldı, veriden seçilmedi; aşağıdaki sonuçlar <b>tüm geçmişin</b> ({f['veri_gun']} gün) olduğu gibi dökümüdür, seçim yanlılığı yoktur.")}
 Tek pozisyon: pozisyon açıkken gelen sinyal atlanır. Komisyon (işlem başı %{maliyet:g}) ve vadelide funding düşülmüştür. Kasa getirisi: her işlemde kasanın tamamı, kaldıraçsız.</p>
 {_donem_kutulari(f.get("donemler"))}
 <div class="kpi-izgara kpi-4">{_fable_istatistik_kutu(f"Tüm geçmiş · {f['veri_gun']} gün", st["tum"], True)}{_fable_istatistik_kutu("Son 90 gün", st["son90"])}{_fable_istatistik_kutu("Son 30 gün", st["son30"])}
