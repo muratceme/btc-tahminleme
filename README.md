@@ -76,6 +76,11 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
   bir kuraldan daha az söz hakkı alır. Coin sekmesinde ve her coinin üstünde görünür.
 - **Geriye dönük kontrol:** 15, 30, 45 ve 60 dakika önce sistem hangi sinyali veriyordu, o an long ya da short açsaydın
   şu anki fiyatla komisyon dahil ne durumda olurdun.
+- **Sinyal yoksa eğilim:** 15m mumda tek mum yönü zor tahmin edilir; %70 eşiği çoğu zaman "sinyal yok" demektir. Bu
+  durumda pano ve Sinyaller sayfası modellerin o anki **eğilimini** gösterir (ör. "eğilim LONG %57 · model doğruluğu %54 ·
+  düşük güven"). Bu işlem sinyali değildir; son 24 saatte kaç kez doğru çıktığı Sinyaller sayfasında sayılır. Daha sık ama
+  daha zayıf sinyal istersen `ayarlar/kullanici.json` içinde `"min_tutarlilik": 0.6` yaz (kurallar yeniden aranır;
+  Wilson ağırlığı sayesinde zayıf kaynaklar oylamada az söz hakkı alır).
 - **Sinyaller sayfası (`sinyaller.html`, üst menüde "Sinyaller · 24 saat"):** son 24 saatin her mumu için kısa vade ve gün sonu
   sinyali, **çıkış ne zaman** (sinyali veren kaynakların hedefi: sonraki mum, 3 mum sonra, gün sonu…), çıkıştaki fiyat ve
   komisyon dahil sonuç; mum grafiğinde giriş/çıkış işaretleri; şerit görünümü. Varsayılan olarak sadece sinyal olan mumlar listelenir.

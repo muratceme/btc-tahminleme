@@ -28,7 +28,8 @@ def kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli: bool) -> dict[str, l
     if hizli and dosya.exists():
         kayit = json.loads(dosya.read_text(encoding="utf-8"))
         yas = datetime.now(timezone.utc) - datetime.fromisoformat(kayit["zaman"])
-        if kayit.get("surum") == KURAL_SURUM and yas.total_seconds() < 24 * 3600:
+        if (kayit.get("surum") == KURAL_SURUM and kayit.get("min_tutarlilik", 0.70) == config.MIN_TUTARLILIK
+                and yas.total_seconds() < 24 * 3600):
             son = KT.iloc[-1]
             for liste in kayit["kurallar"].values():
                 for r in liste:
@@ -44,7 +45,8 @@ def kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli: bool) -> dict[str, l
     kurallar = {k: performans.performans_ekle_ve_ele(v, o, KT, hedef) for k, v in kurallar.items()}
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
     dosya.write_text(json.dumps({"zaman": datetime.now(timezone.utc).isoformat(), "surum": KURAL_SURUM,
-                                 "kurallar": kurallar}, ensure_ascii=False, indent=1), encoding="utf-8")
+                                 "min_tutarlilik": config.MIN_TUTARLILIK, "kurallar": kurallar},
+                                ensure_ascii=False, indent=1), encoding="utf-8")
     pd.DataFrame(kurallar["sonraki_mum"] + kurallar["gun_sonu"] + kurallar["derin"]).to_csv(
         config.CIKTI_DIR / f"kurallar_{sembol}_{aralik}.csv", index=False)
     return kurallar

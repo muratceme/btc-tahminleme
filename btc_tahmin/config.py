@@ -43,7 +43,7 @@ MIN_DESTEK_EGITIM = 40        # eğitim verisinde koşul en az kaç kez oluşmal
 MIN_DESTEK_TEST = 20          # test verisinde en az kaç kez oluşmalı
 EGITIM_ORANI = 0.60           # kronolojik bölme: ilk %60 eğitim (kural arama)
 DOGRULAMA_ORANI = 0.20        # sonraki %20 doğrulama (eleme), son %20 TEST (tutarlılık notu)
-MIN_TUTARLILIK = 0.70         # %70 altı hiçbir sonuç raporlanmaz
+MIN_TUTARLILIK = 0.70         # %70 altı hiçbir sonuç raporlanmaz (ayarlar/kullanici.json 'min_tutarlilik' ile değişir, aşağıda)
 
 # --- Derin tarama (ince eşikler, 3-7 koşul, çok mumlu hedefler) ---
 DERIN_MIN_TUTARLILIK = 0.85   # bu taramada sadece %85 ve üstü gösterilir
@@ -66,7 +66,7 @@ GERIYE_MAX_MUM = 12
 # Sinyal zaman çizelgesi (sinyaller.html): son kaç mum için sinyal ve çıkış hesaplanır (15m x 96 = 24 saat)
 CIZELGE_MUM = 96
 
-# Tutarlılık seviyeleri (Risk-A, Risk-B ...)
+# Tutarlılık seviyeleri (Risk-A, Risk-B ...); eşik düşürülürse alt seviyeler de eklenir (aşağıda)
 TUTARLILIK_SEVIYELERI = [0.90, 0.85, 0.80, 0.75, 0.70]
 
 # --- Dış veri kaynakları ---
@@ -99,6 +99,14 @@ def _kullanici() -> dict:
 KULLANICI = _kullanici()
 # İstersen ayarlar/kullanici.json'a "semboller": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT", "BNBUSDT"] yazarak coin ekle
 SEMBOLLER = [x.upper() for x in KULLANICI.get("semboller", SEMBOLLER)]
+
+# Gösterme eşiği: bunun altında tutarlılıkta hiçbir kural/model sinyal vermez. 15m mumda tek mum yönü zor tahmin
+# edildiği için %70 çoğu zaman "sinyal yok" demektir; 0.60-0.65 daha sık ama daha zayıf sinyal verir. Wilson ağırlığı
+# sayesinde zayıf kaynaklar oylamada az söz hakkı alır. Değişince kurallar yeniden aranır (önbellek eşiğe bağlı).
+MIN_TUTARLILIK = min(0.95, max(0.55, float(KULLANICI.get("min_tutarlilik", MIN_TUTARLILIK))))
+TUTARLILIK_SEVIYELERI = [x for x in (0.90, 0.85, 0.80, 0.75, 0.70, 0.65, 0.60, 0.55) if x >= MIN_TUTARLILIK - 1e-9]
+# Eğilim: %MIN_TUTARLILIK altında kalsa bile modellerin o anki yönü; |olasılık - 0,5| bunu aşarsa gösterilir (düşük güven)
+EGILIM_MARJI = float(KULLANICI.get("egilim_marji", 0.05))
 
 # İşlem maliyeti: giriş + çıkış toplam yüzde (komisyon + kayma).
 # vadeli: taker %0,05 x 2 + kayma ~%0,04 = %0,14 · spot: %0,10 x 2 + kayma ~%0,04 = %0,24

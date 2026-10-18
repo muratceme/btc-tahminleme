@@ -83,6 +83,24 @@ def oylar(i: int, KT: pd.DataFrame, kurallar: dict[str, list[dict]], yon_satirla
     return out
 
 
+def egilim(yon_satirlari: list[dict], geri: int, ufuk_adi: str = "kisa") -> dict | None:
+    """Tutarlı sinyal yokken bile modellerin o mumdaki eğilimi (düşük güven): HAM tahminlerin ortalaması.
+    Modelin genel doğruluğu da verilir ki kullanıcı bunun yazı-turadan ne kadar iyi olduğunu görsün."""
+    ham = [r for r in yon_satirlari if r["tur"] == "HAM" and ufuk(r["hedef"]) == ufuk_adi]
+    ps, dogruluk = [], []
+    for r in ham:
+        pg = r.get("p_gecmis") or []
+        if geri < len(pg):
+            ps.append(pg[-1 - geri])
+            dogruluk.append(r.get("modelin_genel_dogrulugu") or 0.5)
+    if not ps:
+        return None
+    p = float(np.mean(ps))
+    yon = "LONG" if p - 0.5 >= config.EGILIM_MARJI else ("SHORT" if 0.5 - p >= config.EGILIM_MARJI else None)
+    return {"yon": yon, "p_yukari": round(p, 3), "olasilik": round(max(p, 1 - p), 3),
+            "model_dogrulugu": round(float(np.mean(dogruluk)), 3), "model_sayisi": len(ps)}
+
+
 def karar(o: list[dict]) -> dict:
     lw = sum(x["agirlik"] for x in o if x["yon"] == "LONG")
     sw = sum(x["agirlik"] for x in o if x["yon"] == "SHORT")
@@ -126,7 +144,9 @@ def hesapla(o: pd.DataFrame, KT: pd.DataFrame, kurallar: dict, yon_satirlari: li
     gsm = gun_sonu_mumlari(o)
     simdi_fiyat = float(o["close"].iloc[-1])
     simdi = karar(oylar(n - 1, KT, kurallar, yon_satirlari, aralik, 0, "kisa", int(gsm[-1])))
+    simdi["egilim"] = egilim(yon_satirlari, 0, "kisa")
     gun_sonu = karar(oylar(n - 1, KT, kurallar, yon_satirlari, aralik, 0, "gun_sonu", int(gsm[-1])))
+    gun_sonu["egilim"] = egilim(yon_satirlari, 0, "gun_sonu")
     satirlar = []
     for dakika in config.GERIYE_DAKIKALAR:
         geri = dakika // dk
@@ -134,6 +154,7 @@ def hesapla(o: pd.DataFrame, KT: pd.DataFrame, kurallar: dict, yon_satirlari: li
             continue
         i = n - 1 - geri
         k = karar(oylar(i, KT, kurallar, yon_satirlari, aralik, geri, "kisa", int(gsm[i])))
+        k["egilim"] = egilim(yon_satirlari, geri, "kisa")
         giris = float(o["close"].iloc[i])
         hareket = (simdi_fiyat / giris - 1) * 100
         long_net, short_net = hareket - maliyet, -hareket - maliyet
@@ -142,7 +163,7 @@ def hesapla(o: pd.DataFrame, KT: pd.DataFrame, kurallar: dict, yon_satirlari: li
             "dakika": dakika, "zaman": o["time"].iloc[i].isoformat(), "giris": giris, "simdi": simdi_fiyat,
             "hareket_yuzde": round(hareket, 3), "long_net": round(long_net, 3), "short_net": round(short_net, 3),
             "sinyal": k["sinyal"], "guc": k["guc"], "long_oy": k["long_oy"], "short_oy": k["short_oy"],
-            "dayanak": k.get("dayanak", [])[:3],
+            "dayanak": k.get("dayanak", [])[:3], "egilim": k["egilim"],
             "sinyale_gore_net": None if sonuc is None else round(sonuc, 3),
             "sinyal_dogru": None if sonuc is None else bool((hareket > 0) == (k["sinyal"] == "LONG") and hareket != 0),
         })
@@ -177,9 +198,13 @@ def zaman_cizelgesi(o: pd.DataFrame, KT: pd.DataFrame, kurallar: dict, yon_satir
         satir = {"zaman": o["time"].iloc[i].isoformat(), "fiyat": float(o["close"].iloc[i])}
         for ad in ("kisa", "gun_sonu"):
             k = karar(oylar(i, KT, kurallar, yon_satirlari, aralik, geri, ad, int(gsm[i])))
+            e = egilim(yon_satirlari, geri, ad)
+            if e and e["yon"]:
+                e["cikis_mum"] = 1 if ad == "kisa" else max(1, int(gsm[i]))
+                e["cikis"] = _cikis_degerlendir(i, e["cikis_mum"], e["yon"], o, maliyet)
             satir[ad] = {"sinyal": k["sinyal"], "guc": k["guc"], "long_oy": k["long_oy"], "short_oy": k["short_oy"],
                          "dayanak": k.get("dayanak", [])[:3], "cikis_mum": k.get("cikis_mum"),
                          "en_gec_cikis_mum": k.get("en_gec_cikis_mum"),
-                         "cikis": _cikis_degerlendir(i, k.get("cikis_mum"), k["sinyal"], o, maliyet)}
+                         "cikis": _cikis_degerlendir(i, k.get("cikis_mum"), k["sinyal"], o, maliyet), "egilim": e}
         satirlar.append(satir)
     return satirlar

@@ -375,6 +375,19 @@ def _sahte_kesif_satiri(c: dict) -> str:
             "gerçek listede kaç kuralın şans olabileceğinin tahminidir. Şans payı %50'yi aşıyorsa o listeye güvenme.</p></details>")
 
 
+def _egilim_rozeti(e: dict | None, buyuk: bool = False) -> str:
+    """Tutarlı sinyal yokken modellerin eğilimi (düşük güven). e['yon'] yoksa 'eğilim de yok'."""
+    if not e:
+        return ""
+    if not e.get("yon"):
+        return f'<span class="cok-kucuk">eğilim yok (model %{e["olasilik"] * 100:.0f}, kararsız)</span>'
+    ok = e["yon"] == "LONG"
+    stil = ' style="font-size:15px;padding:5px 12px;opacity:.85"' if buyuk else ' style="opacity:.85"'
+    return (f'<span class="rozet {"iyi" if ok else "kotu"}"{stil} title="Tutarlı sinyal yok; bu, modellerin o anki eğilimi. Düşük güven.">'
+            f'{"▲" if ok else "▼"} eğilim {e["yon"]} %{e["olasilik"] * 100:.0f}</span>'
+            f'<span class="cok-kucuk"> model doğruluğu %{e["model_dogrulugu"] * 100:.0f} · düşük güven</span>')
+
+
 def _yon_rozeti(sinyal: str, buyuk: bool = False) -> str:
     sinif, metin = {"LONG": ("iyi", "▲ LONG"), "SHORT": ("kotu", "▼ SHORT")}.get(sinyal, ("notr", "● BEKLE"))
     stil = ' style="font-size:22px;padding:6px 16px"' if buyuk else ""
@@ -398,6 +411,7 @@ def _ufuk_blogu(ad: str, sm: dict, aciklama: str) -> str:
             f'<div class="denge" style="margin-top:10px"><div class="b" style="width:{100 * sm.get("long_oy", 0) / toplam:.0f}%"></div>'
             f'<div class="a" style="width:{100 * sm.get("short_oy", 0) / toplam:.0f}%"></div></div>'
             + (f'<p class="kucuk">{_e(sm["neden"])}</p>' if sm.get("neden") else "")
+            + (f'<div style="margin-top:6px">{_egilim_rozeti(sm.get("egilim"), True)}</div>' if sm.get("sinyal") == "BEKLE" and sm.get("egilim") else "")
             + (f'<ul class="liste">{dayanak}</ul>' if dayanak else "") + '</div>')
 
 
@@ -410,16 +424,19 @@ def _yon_karti(c: dict) -> str:
     sol = (f'{_baslik("Yön sinyali · şu an", "yon-sinyali")}'
            + _ufuk_blogu("Kısa vade", sm, f"sonraki {c['aralik']} mum ile birkaç mum sonrası")
            + (_ufuk_blogu("Gün sonu", gs, "TSİ 23:59 kapanışına göre") if gs else "")
-           + '<p class="cok-kucuk">Şu an aktif olan tüm tutarlı kural ve modellerin oylaması; kısa vade ve gün sonu ayrı oylanır, '
+           + f'<p class="cok-kucuk">Şu an aktif olan tüm tutarlı (%{int(config.MIN_TUTARLILIK * 100)}+) kural ve modellerin oylaması; kısa vade ve gün sonu ayrı oylanır, '
              'birbirine karıştırılmaz. Her kaynağın ağırlığı tutarlılığının <b>güvenli (Wilson alt sınırı)</b> değeriyle artar: '
-             'az örnekli bir kural, aynı yüzdeyle çok örnekli bir kuraldan daha az söz hakkı alır.</p>')
+             'az örnekli bir kural, aynı yüzdeyle çok örnekli bir kuraldan daha az söz hakkı alır. '
+             'Tutarlı kaynak yoksa <b>eğilim</b> gösterilir: modellerin o anki yönü ve olasılığı; eşiği geçmediği için düşük güvenlidir, işlem sinyali değildir. '
+             'Eşiği ayarlar/kullanici.json içinde <span class="mono">"min_tutarlilik"</span> ile (ör. 0.6) düşürebilirsin.</p>')
     satir = []
     for r in y.get("geriye", []):
         zaman = r["zaman"][11:16]
         dogru = "" if r["sinyal_dogru"] is None else ('<span class="rozet iyi">✓</span>' if r["sinyal_dogru"] else '<span class="rozet kotu">✕</span>')
         satir.append(
             f'<tr><td><b>{r["dakika"]} dk önce</b><div class="cok-kucuk">{_e(zaman)} UTC</div></td>'
-            f'<td>{_yon_rozeti(r["sinyal"])}<div class="cok-kucuk">{r["long_oy"]} long / {r["short_oy"]} short oy</div></td>'
+            f'<td>{_yon_rozeti(r["sinyal"])}<div class="cok-kucuk">{r["long_oy"]} long / {r["short_oy"]} short oy</div>'
+            f'{("<div>" + _egilim_rozeti(r.get("egilim")) + "</div>") if r["sinyal"] == "BEKLE" and r.get("egilim") else ""}</td>'
             f'<td class="sayi mono"><b>{_yuzde(r["sinyale_gore_net"]) if r["sinyale_gore_net"] is not None else "işlem yok"}</b> {dogru}</td>'
             f'<td class="sayi mono">{_yuzde(r["long_net"])}</td><td class="sayi mono">{_yuzde(r["short_net"])}</td>'
             f'<td class="sayi mono">{_fiyat(r["giris"])}<div class="cok-kucuk">fiyat {_yuzde(r["hareket_yuzde"])}</div></td></tr>')
@@ -899,6 +916,7 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <p><b>Geriye dönük kontrol:</b> 15, 30, 45 ve 60 dakika önceki mumda sistem hangi sinyali veriyordu? O an long ya da short açsaydın, şu anki fiyatla komisyon dahil ne durumda olurdun?
 “Sinyale uysaydın” sütunu, o anki sinyalin yönünde açılan işlemin sonucudur. ✓ fiyatın sinyal yönünde gittiğini gösterir.</p>
 <p class="kucuk">Kurallar yakın dönem verisiyle de test edildiği için bu tablo biraz iyimser olabilir. Gerçek ölçüm canlı karnededir.</p>
+<p><b>Sinyal yoksa “eğilim”:</b> %{int(config.MIN_TUTARLILIK * 100)}+ tutarlı hiçbir kaynak aktif değilse sistem BEKLE der; ama yanında modellerin o anki <b>eğilimini</b> de yazar (ör. “eğilim LONG %57 · model doğruluğu %54 · düşük güven”). Model doğruluğu, o modelin test dönemindeki genel isabetidir; %50 yazı-tura demektir. Eğilim işlem sinyali değildir, sadece “modeller hangi tarafa bakıyor” bilgisidir. Daha sık ama daha zayıf sinyal istersen ayarlar/kullanici.json içinde <span class="mono">"min_tutarlilik": 0.6</span> yazabilirsin; kurallar o eşikle yeniden aranır ve zayıf kaynaklar Wilson ağırlığıyla az söz hakkı alır.</p>
 <p><b>Sinyaller sayfası (son 24 saat):</b> Üst menüdeki <a href="sinyaller.html">Sinyaller · 24 saat</a> sayfası aynı hesabı son 24 saatin <b>her mumu</b> için yapar. Her sinyalin yanında <b>“Çıkış ne zaman?”</b> yazar: o sinyali veren kaynakların hedefi (sonraki mum, 3 mum sonra, gün sonu…). Birden çok kaynak farklı çıkış istiyorsa ağırlığı en yüksek olan ufuk “önerilen çıkış”, en uzun olanı “en geç” olarak gösterilir. “Sonuç” sütunu, sinyal mumunun kapanışında girip önerilen çıkış mumunda çıkmanın komisyon dahil getirisidir; çıkış mumu daha gelmediyse AÇIK yazar. Grafikte ▲▼ giriş, ● çıkış ve sonucu gösterir; şeritte bir hücreye tıklayınca tabloda o mum açılır.</p>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """
 <div class="tablo-sar"><table><thead><tr><th>Ad</th><th>Ne söyler?</th><th>Tutarlılık neyi ölçer?</th></tr></thead><tbody>
@@ -1047,11 +1065,15 @@ def _tsi(iso: str) -> str:
 def _cizelge_ozet(cz: list[dict], ufuk: str) -> dict:
     sin = [r[ufuk] for r in cz if r[ufuk]["sinyal"] != "BEKLE"]
     kapanan = [u["cikis"] for u in sin if u.get("cikis") and u["cikis"]["durum"] == "kapandi"]
+    eg = [r[ufuk]["egilim"] for r in cz if r[ufuk]["sinyal"] == "BEKLE" and (r[ufuk].get("egilim") or {}).get("yon")]
+    eg_kapanan = [e["cikis"] for e in eg if e.get("cikis") and e["cikis"]["durum"] == "kapandi"]
     return {"sinyal": len(sin), "long": sum(1 for u in sin if u["sinyal"] == "LONG"),
             "short": sum(1 for u in sin if u["sinyal"] == "SHORT"),
             "kapanan": len(kapanan), "acik": len(sin) - len(kapanan),
             "dogru": sum(1 for c in kapanan if c["dogru"]), "net": round(sum(c["net"] for c in kapanan), 2),
-            "net_pozitif": sum(1 for c in kapanan if c["net"] > 0)}
+            "net_pozitif": sum(1 for c in kapanan if c["net"] > 0),
+            "egilim": len(eg), "egilim_kapanan": len(eg_kapanan), "egilim_dogru": sum(1 for c in eg_kapanan if c["dogru"]),
+            "egilim_net": round(sum(c["net"] for c in eg_kapanan), 2)}
 
 
 def _sinyal_coin(c: dict) -> str:
@@ -1064,18 +1086,25 @@ def _sinyal_coin(c: dict) -> str:
 
     def kpi(ad, o):
         oran = f"{o['dogru']}/{o['kapanan']}" if o["kapanan"] else "—"
+        eg_oran = f"{o['egilim_dogru']}/{o['egilim_kapanan']} doğru" if o["egilim_kapanan"] else "—"
         return (f'<div class="kpi"><div class="e">{_e(ad)}</div><div class="d">{o["sinyal"]} sinyal</div>'
                 f'<div class="a"><span class="iyi">{o["long"]} long</span> · <span class="kotu">{o["short"]} short</span> · {o["acik"]} hâlâ açık</div></div>'
                 f'<div class="kpi"><div class="e">{_e(ad)} · kapananlarda</div>'
                 f'<div class="d {"iyi" if o["net"] > 0 else ("kotu" if o["net"] < 0 else "")}">{o["net"]:+.2f}%</div>'
-                f'<div class="a">yön doğru {oran} · komisyon sonrası artı {o["net_pozitif"]}/{o["kapanan"]}</div></div>')
+                f'<div class="a">yön doğru {oran} · komisyon sonrası artı {o["net_pozitif"]}/{o["kapanan"]}</div></div>'
+                f'<div class="kpi"><div class="e">{_e(ad)} · eğilim (düşük güven)</div><div class="d">{o["egilim"]} mum</div>'
+                f'<div class="a">son 24 saatte {eg_oran} · net {o["egilim_net"]:+.2f}%</div></div>')
 
     def serit(ufuk):
         hucre = []
         for k, r in enumerate(cz):
             u = r[ufuk]
             sin = u["sinyal"]
+            e = u.get("egilim") or {}
             sinif = {"LONG": "L", "SHORT": "S"}.get(sin, "")
+            if not sinif and e.get("yon"):
+                sinif = {"LONG": "L zayif", "SHORT": "S zayif"}.get(e["yon"], "")
+                sin = f"eğilim {e['yon']} %{e['olasilik'] * 100:.0f} (düşük güven)"
             if u.get("cikis") and u["cikis"]["durum"] == "acik":
                 sinif += " acik"
             cik = f" · çıkış {u['cikis_mum']} mum sonra" if u.get("cikis_mum") else ""
@@ -1085,11 +1114,25 @@ def _sinyal_coin(c: dict) -> str:
     satir = []
     for k, r in enumerate(cz):
         ks, gs = r["kisa"], r["gun_sonu"]
-        bekle = ks["sinyal"] == "BEKLE" and gs["sinyal"] == "BEKLE"
+        bekle = all(u["sinyal"] == "BEKLE" and not (u.get("egilim") or {}).get("yon") for u in (ks, gs))
 
         def hucre(u):
+            e = u.get("egilim") or {}
+            if u["sinyal"] == "BEKLE" and e.get("yon"):
+                c_ = e.get("cikis")
+                if not c_:
+                    sonuc = "—"
+                elif c_["durum"] == "acik":
+                    sonuc = f'<span class="rozet orta">AÇIK</span><div class="cok-kucuk">şu an {_yuzde(c_["net"])}</div>'
+                else:
+                    sonuc = f'{_yuzde(c_["net"])} ' + ('<span class="rozet iyi">✓</span>' if c_["dogru"] else '<span class="rozet kotu">✕</span>')
+                return (f'<td>{_egilim_rozeti(e)}</td><td><b>{e["cikis_mum"]} mum sonra</b><div class="cok-kucuk">'
+                        + (f"{_tsi(c_['zaman'])} TSİ" if c_ and c_["zaman"] else (f"~{_tsi(c_['beklenen_zaman'])} TSİ" if c_ else "")) + '</div></td>'
+                        f'<td class="sayi mono">{_fiyat(c_["fiyat"]) if c_ else "—"}</td><td class="sayi mono">{sonuc}</td>'
+                        f'<td class="sz-dayanak">Tutarlı kural/model yok; {e["model_sayisi"]} modelin ortalama tahmini yukarı %{e["p_yukari"] * 100:.0f}.</td>')
             if u["sinyal"] == "BEKLE":
-                return '<td><span class="rozet notr">● BEKLE</span></td><td class="kucuk">—</td><td class="sayi mono">—</td><td class="sayi mono">—</td><td></td>'
+                return ('<td><span class="rozet notr">● BEKLE</span>' + (f'<div>{_egilim_rozeti(e)}</div>' if e else '')
+                        + '</td><td class="kucuk">—</td><td class="sayi mono">—</td><td class="sayi mono">—</td><td></td>')
             c_ = u.get("cikis")
             gec = f" (en geç {u['en_gec_cikis_mum']})" if u.get("en_gec_cikis_mum") and u["en_gec_cikis_mum"] != u["cikis_mum"] else ""
             cikis_metni = (f"<b>{u['cikis_mum']} mum sonra</b>{gec}<div class='cok-kucuk'>"
@@ -1113,12 +1156,13 @@ def _sinyal_coin(c: dict) -> str:
     return f"""<section class="coin sz-coin" id="{_e(sembol)}" data-sembol="{_e(sembol)}">
 <div class="kart bolum">{_baslik(f"{sembol.replace('USDT', '')} · son 24 saat · {aralik} mumlar · {len(cz)} mum", "sinyaller")}
 <div class="kpi-izgara kpi-4">{kpi("Kısa vade", oz["kisa"])}{kpi("Gün sonu", oz["gun_sonu"])}</div>
-<p class="cok-kucuk" style="margin-top:10px">Kısa vade şeridi (yeşil long, kırmızı short, kesikli çerçeve: çıkış mumu henüz gelmedi). Bir hücreye tıklayınca tabloda o satıra gider.</p>
+<p class="cok-kucuk" style="margin-top:10px">Kısa vade şeridi: yeşil long, kırmızı short; <b>soluk renk</b> tutarlı sinyal yokken modellerin eğilimi (düşük güven); kesikli çerçeve: çıkış mumu henüz gelmedi. Bir hücreye tıklayınca tabloda o satıra gider.</p>
 {serit("kisa")}<div class="serit-saat"><span>{ilk}</span><span>{son} TSİ</span></div>
 <p class="cok-kucuk" style="margin-top:8px">Gün sonu şeridi</p>{serit("gun_sonu")}
 <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="kucuk">Grafikte işaretle:</span>
 <button class="ufuk-dugme" data-ufuk="kisa" aria-pressed="true">Kısa vade</button><button class="ufuk-dugme" data-ufuk="gun_sonu" aria-pressed="false">Gün sonu</button>
-<span class="cok-kucuk">▲▼ giriş ve önerilen çıkış mumu (→N), ● çıkış ve komisyon sonrası sonuç</span></div>
+<label class="cok-kucuk" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="sz-egilim" checked> eğilimleri de işaretle</label>
+<span class="cok-kucuk">▲▼ giriş ve önerilen çıkış mumu (→N), ● çıkış ve komisyon sonrası sonuç; küçük soluk işaretler eğilim</span></div>
 <div class="sz-grafik"></div></div>
 <div class="kart bolum"><div class="kart-baslik"><span>Mum mum sinyaller</span>
 <label class="kucuk" style="text-transform:none;letter-spacing:0;font-weight:500"><input type="checkbox" class="sz-hepsi"> BEKLE satırlarını da göster</label></div>
@@ -1127,6 +1171,7 @@ def _sinyal_coin(c: dict) -> str:
 <th>Gün sonu</th><th>Çıkış ne zaman?</th><th class="sayi">Çıkış fiyatı</th><th class="sayi">Sonuç (net)</th><th>Dayanak</th></tr></thead>
 <tbody>{"".join(satir)}</tbody></table></div>
 <p class="cok-kucuk">“Çıkış ne zaman?”: o sinyali veren kaynakların hedefi; ağırlığı en yüksek olan ufuk önerilen çıkıştır (“en geç”: en uzun ufuklu kaynağın çıkışı).
+<b>Eğilim</b> satırları: %{int(config.MIN_TUTARLILIK * 100)}+ tutarlı kaynak yokken modellerin o anki yönü; yanındaki “model doğruluğu” bu modelin test dönemindeki genel isabetidir (%50 yazı-tura demek). Eğilim işlem sinyali değildir; ama son 24 saatte kaç kez doğru çıktığını yukarıdaki kutuda görebilirsin.
 Sonuç, sinyal mumunun kapanışında girip önerilen çıkış mumunun kapanışında çıkmanın komisyon dahil (işlem başı %{(c.get("yon") or {}).get("maliyet_yuzde", 0):g}) getirisi.
 Çıkış mumu daha gelmediyse AÇIK yazar ve şu anki fiyata göre durum gösterilir. Kurallar yakın dönem verisiyle de test edildiği için bu tablo biraz iyimser olabilir; gerçek ölçüm canlı karnededir.</p></div>
 </section>"""
