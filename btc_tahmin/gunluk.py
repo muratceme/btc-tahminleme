@@ -158,7 +158,9 @@ def karne(df: pd.DataFrame) -> dict:
         "genel": ozet(biten), "son_7_gun": ozet(son7), "turler": turler,
         "emekli": sorted(emekliler(df)),
         "son_sinyaller": [
-            {"zaman": r["sinyal_zamani"].isoformat(), "sembol": r["sembol"], "aciklama": r["aciklama"],
+            {"zaman": r["sinyal_zamani"].isoformat(), "sembol": r["sembol"], "aciklama": r["aciklama"], "kural_id": str(r["kural_id"]),
+             "hedef": str(r["hedef"]), "yon_yukari": int(r["yon_yukari"]), "aralik": str(r["aralik"]), "giris": float(r["giris"]),
+             "cikis_zamani": r["cikis_zamani"].isoformat(), "tur": str(r["tur"]),
              "tutarlilik": r["tutarlilik"], "durum": r["durum"], "net": None if pd.isna(r["net_yuzde"]) else float(r["net_yuzde"])}
             for _, r in son.iterrows()],
     }

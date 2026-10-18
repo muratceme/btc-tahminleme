@@ -226,3 +226,20 @@ def test_anlik_topla_bos_ve_dolu():
     assert a["sinyaller"][0]["link"] == "fable.html?strat=s1#BTCUSDT" and len(a["egilimler"]) == 1
     bos = anlik.topla({"olusturma": "x", "coinler": {}})
     assert bos["sinyaller"] == [] and bos["acik_pozisyonlar"] == []
+
+
+def test_son_saat_penceresi():
+    from btc_tahmin import anlik
+    def satir(z, sinyal="LONG"):
+        return {"zaman": z, "fiyat": 100.0, "sinyal": sinyal, "cikis_mum": 2, "maks_mum": 2, "pozisyonda": False,
+                "cikis": {"durum": "kapandi", "net": 0.3, "dogru": True, "zaman": z} if sinyal != "BEKLE" else None}
+    f = {"ad": "x", "istatistik": {"tum": {"islem": 3, "toplam_net": 1.0, "kar_faktoru": 1.2}}, "kurallar": [],
+         "cizelge": [satir("2026-01-10T10:00:00+00:00"), satir("2026-01-10T11:30:00+00:00"), satir("2026-01-10T12:00:00+00:00", "BEKLE")]}
+    rapor = {"olusturma": "2026-01-10T12:10:00+00:00",
+             "karne": {"son_sinyaller": [{"tur": "kural", "zaman": "2026-01-10T11:45:00+00:00", "sembol": "BTCUSDT", "aciklama": "sonraki 15m mum YEŞİL · RSI", "kural_id": "abc",
+                                          "hedef": "sonraki_mum", "yon_yukari": 1, "aralik": "15m", "giris": 100.0, "cikis_zamani": "2026-01-10T12:00:00+00:00",
+                                          "tutarlilik": 0.8, "durum": "bekliyor", "net": None}]},
+             "coinler": {"BTCUSDT": {"aralik": "15m", "son_mum_zamani": "2026-01-10T12:00:00+00:00", "fiyat": 100.0, "cizelge": [], "fable": {"s1": f}}}}
+    a = anlik.son_saat(rapor, 1.0)
+    assert [r["kaynak"] for r in a["satirlar"]] == ["Pano · aktif kural", "Fable sinyalleri"]   # 10:00 pencere dışı, en yeni üstte
+    assert a["acik"] == 1 and a["kapanan"] == 1 and a["satirlar"][0]["link"] == "grafik.html?s=BTCUSDT&k=abc"

@@ -583,7 +583,7 @@ def _makro_karti(b: dict) -> str:
 # ------------------------------------------------------------------ ortak iskelet
 def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str = "", yenile: int | None = None) -> str:
     menu = "".join(f'<a href="{u}" class="{"aktif" if aktif_sayfa == u else ""}">{a}</a>'
-                   for u, a in (("rapor.html", "Pano"), ("simdi.html", "⚡ Şimdi gir"), ("sinyaller.html", "Sinyaller · 24 saat"), ("fable.html", "Fable sinyalleri"),
+                   for u, a in (("rapor.html", "Pano"), ("simdi.html", "⚡ Şimdi gir"), ("son-saat.html", "Son 1 saat"), ("sinyaller.html", "Sinyaller · 24 saat"), ("fable.html", "Fable sinyalleri"),
                                 ("tarama.html", "Strateji tarama"), ("umut.html", "Uzun vade"), ("nasil-calisir.html", "Nasıl çalışır?")))
     canli = ('<span class="nokta" id="nokta"><i></i> CANLI</span><span>Güncelleme: <b id="yas" class="mono">—</b></span>'
              if ts else "") + '<span id="saat" class="mono"></span>'
@@ -922,6 +922,7 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <p><b>Strateji tarama sayfası:</b> el yazımı stratejiler zarar yazarsa tersinden gidilir: beş ailenin yüzlerce varyantı (EMA çiftleri, RSI eşikleri, hacim filtresi, çıkış süresi, sadece long/short) denenir, veri %60/%20/%20 bölünür ve yalnızca üç dönemde de komisyon sonrası artı yazanlar gösterilir. Denenen aday sayısı açıkça yazılır; geçen sayı denenenin %5'inden azsa şans payı yüksektir. Asıl ölçüm canlı takiptir.</p>
 <p><b>Uzun vade sayfası:</b> aynı strateji taraması 1 saatlik ve 4 saatlik mumlarda çalıştırılır. Her zaman dilimi için “tipik mum hareketi ÷ komisyon” oranı verilir (1'in altı: komisyon hareketi yiyor; 2 ve üstü: nefes alanı var), al-tut ile karşılaştırılır ve geçen stratejiler trendli (ADX > 25) ve yatay piyasada ayrı ölçülür.</p>
 <p><b>Şimdi gir sayfası:</b> tüm sayfalardaki kaynakların son mumdaki sinyallerini tek listede toplar: coin, yön, çıkış mumu ve saati, grafik türü (mum süresi), geçmiş performans ve o kaynağın sayfasına bağlantı. Strateji sayfalarındaki açık pozisyonlar ve düşük güvenli eğilimler ayrı bölümlerde. Sinyal olmaması normaldir; sayfa her güncellemede yenilenir.</p>
+<p><b>Son 1 saat sayfası:</b> Şimdi gir ile aynı mantık, ama son 1 saat içinde sinyale dönmüş her kaynak: giriş saati, çıkış saati, şu anki durum (AÇIK ya da KAPANDI ve net sonuç). Aktif kural satırları canlı sinyal günlüğünden, diğerleri 24 saatlik çizelgeden gelir.</p>
 <p><b>Sinyaller sayfası (son 24 saat):</b> Üst menüdeki <a href="sinyaller.html">Sinyaller · 24 saat</a> sayfası aynı hesabı son 24 saatin <b>her mumu</b> için yapar. Her sinyalin yanında <b>“Çıkış ne zaman?”</b> yazar: o sinyali veren kaynakların hedefi (sonraki mum, 3 mum sonra, gün sonu…). Birden çok kaynak farklı çıkış istiyorsa ağırlığı en yüksek olan ufuk “önerilen çıkış”, en uzun olanı “en geç” olarak gösterilir. “Sonuç” sütunu, sinyal mumunun kapanışında girip önerilen çıkış mumunda çıkmanın komisyon dahil getirisidir; çıkış mumu daha gelmediyse AÇIK yazar. Grafikte ▲▼ giriş, ● çıkış ve sonucu gösterir; şeritte bir hücreye tıklayınca tabloda o mum açılır.</p>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """
 <div class="tablo-sar"><table><thead><tr><th>Ad</th><th>Ne söyler?</th><th>Tutarlılık neyi ölçer?</th></tr></thead><tbody>
@@ -1514,3 +1515,48 @@ Sayfa adı şaka değil ama tavsiye de değil: burada “sinyal var” demek, �
 </main>
 <footer>{_e(rapor['uyari'])}</footer>"""
     return _iskelet("Şimdi gir · Kripto Risk Terminali", "simdi.html", govde, "", rapor["olusturma"], yenile_sn)
+
+
+# ------------------------------------------------------------------ Son 1 saat (son saatte sinyale dönenler)
+def _son_saat_satir(r: dict) -> str:
+    ck = r["cikis"]
+    cikis = f'<b>{_e(ck["metin"])}</b>' + (f'<div class="cok-kucuk">≈ {ck["saat"]} TSİ</div>' if ck.get("saat") else "")
+    if r["durum"] == "acik":
+        durum = '<span class="rozet orta">AÇIK</span>' + (f'<div class="cok-kucuk">şu an {_yuzde(r["net"])}</div>' if r.get("net") is not None else "")
+    elif r["durum"] == "kapandi":
+        isaret = "" if r.get("dogru") is None else (' <span class="rozet iyi">✓</span>' if r["dogru"] else ' <span class="rozet kotu">✕</span>')
+        durum = f'<span class="rozet notr">KAPANDI</span><div class="mono">{_yuzde(r["net"])}{isaret}</div>' + (f'<div class="cok-kucuk">{_tsi(r["cikis_zaman"])} TSİ</div>' if r.get("cikis_zaman") else "")
+    else:
+        durum = '<span class="cok-kucuk">—</span>'
+    kurallar = "<br>".join(_e(k) for k in r.get("kurallar", []) if k)
+    return (f'<tr><td><b>{_e(r["sembol"].replace("USDT", ""))}</b><div class="cok-kucuk">{_e(r["grafik"])} mum</div></td>'
+            f'<td>{_yon_rozeti(r["yon"])}<div class="cok-kucuk">giriş {_tsi(r["zaman"])} TSİ · {_fiyat(r["fiyat"])}</div></td>'
+            f'<td>{cikis}</td><td>{durum}</td>'
+            f'<td><b>{_e(r["kaynak"])}</b><div class="kucuk">{_e(r["ad"])}</div><div class="sz-dayanak">{kurallar}</div></td>'
+            f'<td class="kucuk">{_e(r["performans"])}</td>'
+            f'<td><a class="ufuk-dugme" style="display:inline-block;text-decoration:none" href="{_e(r["link"])}">Geçmişini gör →</a></td></tr>')
+
+
+def son_saat_html(rapor: dict, yenile_sn: int | None = None) -> str:
+    from .anlik import son_saat
+    a = son_saat(rapor)
+    sat = a["satirlar"]
+    bas = "".join(f'<th>{h}</th>' for h in ("Coin", "Sinyal · giriş", "Çıkış ne zaman?", "Durum", "Kaynak · hangi sayfa", "Geçmiş performans", ""))
+    saat_metni = f"{a['saat']:g} saat" if a["saat"] != 1 else "1 saat"
+    if sat:
+        govde_ic = (f'<div class="kart bolum" style="border-color:var(--altin)"><div class="kart-baslik"><span>Son {saat_metni}te sinyale dönenler · {len(sat)} kayıt · {a["acik"]} açık · {a["kapanan"]} kapandı'
+                    + (f' · kapananlarda net <span class="mono {"iyi" if a["net_kapanan"] > 0 else "kotu"}">{a["net_kapanan"]:+.2f}%</span>' if a["kapanan"] else "") + '</span></div>'
+                    f'<div class="tablo-sar"><table><thead><tr>{bas}</tr></thead><tbody>{"".join(_son_saat_satir(r) for r in sat)}</tbody></table></div>'
+                    '<p class="cok-kucuk">En yeni üstte. “Durum”: çıkış mumu geldiyse KAPANDI ve komisyon dahil net sonuç; gelmediyse AÇIK ve şu anki fiyata göre durum. '
+                    'Aktif kural satırları canlı sinyal günlüğünden gelir (gerçek zamanlı kayıt). Yön oylaması ve strateji satırları 24 saatlik çizelgeden alınır.</p></div>')
+    else:
+        govde_ic = (f'<div class="kart bolum"><div class="kart-baslik"><span>● Son {saat_metni}te hiçbir kaynak sinyale dönmedi</span></div>'
+                    '<p class="kucuk">Normaldir. Sayfa her güncellemede yenilenir; anlık durum için <a href="simdi.html">⚡ Şimdi gir</a>.</p></div>')
+    govde = f"""<main>
+<div class="kart bolum"><p class="kucuk" style="margin:0"><b>Son {saat_metni}:</b> Şimdi gir sayfasıyla aynı mantık, ama yalnızca son mum değil: son {saat_metni} içinde <b>sinyale dönmüş</b> her kaynak
+(yön oylaması, aktif kurallar, Fable / tarama / uzun vade stratejileri) giriş saati, çıkış saati ve şu anki durumuyla. “Geçmişini gör” o kaynağın sayfasını doğru coin ve stratejide açar.
+<span class="cok-kucuk">Pencere: {_tsi(a["sinir"])} – {_tsi(a["zaman"])} TSİ. Değiştirmek için config.py içinde SON_SAAT.</span></p></div>
+{govde_ic}
+</main>
+<footer>{_e(rapor['uyari'])}</footer>"""
+    return _iskelet("Son 1 saat · Kripto Risk Terminali", "son-saat.html", govde, "", rapor["olusturma"], yenile_sn)

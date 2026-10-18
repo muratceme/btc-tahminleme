@@ -65,6 +65,8 @@ GERIYE_DAKIKALAR = [15, 30, 45, 60]
 GERIYE_MAX_MUM = 12
 # Sinyal zaman çizelgesi (sinyaller.html): son kaç mum için sinyal ve çıkış hesaplanır (15m x 96 = 24 saat)
 CIZELGE_MUM = 96
+# 'Son 1 saat' sayfası: bu kadar saat içinde sinyale dönmüş kaynaklar listelenir
+SON_SAAT = 1.0
 
 # Tutarlılık seviyeleri (Risk-A, Risk-B ...); eşik düşürülürse alt seviyeler de eklenir (aşağıda)
 TUTARLILIK_SEVIYELERI = [0.90, 0.85, 0.80, 0.75, 0.70]

@@ -113,3 +113,73 @@ def topla(rapor: dict) -> dict:
     sinyaller.sort(key=lambda r: (r["sembol"], sira.get(r["kaynak"], 9)))
     return {"zaman": rapor["olusturma"], "sinyaller": sinyaller, "acik_pozisyonlar": aciklar, "egilimler": egilimler,
             "coin_son_mum": {s: {"zaman": c["son_mum_zamani"], "aralik": c["aralik"], "fiyat": c["fiyat"]} for s, c in rapor["coinler"].items()}}
+
+
+def _sonuc(c: dict | None) -> dict:
+    """Çizelge satırındaki çıkış bilgisinden durum ve net."""
+    if not c:
+        return {"durum": "bilinmiyor", "net": None, "dogru": None, "cikis_zaman": None}
+    return {"durum": c["durum"], "net": c.get("net"), "dogru": c.get("dogru"), "cikis_zaman": c.get("zaman")}
+
+
+def son_saat(rapor: dict, saat: float = config.SON_SAAT) -> dict:
+    """Son `saat` içinde sinyale dönmüş kaynaklar: giriş, çıkış, şu anki durum (AÇIK / KAPANDI, net)."""
+    simdi = datetime.fromisoformat(rapor["olusturma"])
+    sinir = simdi - timedelta(hours=saat)
+    satirlar = []
+
+    def yeni(iso):
+        return datetime.fromisoformat(iso) >= sinir
+
+    for sembol, c in rapor["coinler"].items():
+        aralik = c["aralik"]
+        grafik = ARALIK_ADI.get(aralik, aralik)
+        # 1) yön oylaması (24 saatlik çizelgeden)
+        for r in c.get("cizelge") or []:
+            if not yeni(r["zaman"]):
+                continue
+            for anahtar, ad in (("kisa", "Yön oylaması · kısa vade"), ("gun_sonu", "Yön oylaması · gün sonu")):
+                u = r.get(anahtar) or {}
+                if u.get("sinyal") in ("LONG", "SHORT"):
+                    satirlar.append({"sembol": sembol, "aralik": aralik, "grafik": grafik, "kaynak": "Sinyaller", "ad": ad,
+                                     "yon": u["sinyal"], "zaman": r["zaman"], "fiyat": r["fiyat"],
+                                     "cikis": _cikis(r["zaman"], aralik, u.get("cikis_mum"), u.get("en_gec_cikis_mum")),
+                                     "performans": f"güç %{u.get('guc', 0) * 100:.0f} · {u.get('long_oy', 0)}L/{u.get('short_oy', 0)}S",
+                                     "link": f"sinyaller.html#{sembol}", "kurallar": u.get("dayanak", [])[:3], **_sonuc(u.get("cikis"))})
+        # 2) stratejiler (Fable, tarama, uzun vade)
+        kaynaklar = [(aralik, c.get("fable"), "Fable sinyalleri", "fable.html", ""),
+                     (aralik, (c.get("tarama") or {}).get("sayfa"), "Strateji tarama", "tarama.html", "")]
+        for tf, d in ((c.get("umut") or {}).get("dilimler") or {}).items():
+            kaynaklar.append((tf, d.get("sayfa"), f"Uzun vade · {d['ad']}", "umut.html", f"&tf={tf}"))
+        for tf, strat, kaynak, sayfa, ek in kaynaklar:
+            for sid, f in (strat or {}).items():
+                st = f["istatistik"]["tum"]
+                dn = f.get("donemler")
+                perf = (f"test {dn['test']['toplam_net']:+.1f}% · KF {dn['test']['kar_faktoru']}" if dn else
+                        (f"tüm geçmiş {st['toplam_net']:+.1f}% · KF {st.get('kar_faktoru')} · {st['islem']} işlem" if st.get("islem") else "işlem yok"))
+                for r in f.get("cizelge") or []:
+                    if r["sinyal"] in ("LONG", "SHORT") and yeni(r["zaman"]):
+                        satirlar.append({"sembol": sembol, "aralik": tf, "grafik": ARALIK_ADI.get(tf, tf), "kaynak": kaynak, "ad": f["ad"],
+                                         "yon": r["sinyal"], "zaman": r["zaman"], "fiyat": r["fiyat"],
+                                         "cikis": _cikis(r["zaman"], tf, r.get("cikis_mum"), r.get("maks_mum")),
+                                         "performans": perf, "link": f"{sayfa}?strat={sid}{ek}#{sembol}", "kurallar": f.get("kurallar", [])[:3],
+                                         **_sonuc(r.get("cikis"))})
+    # 3) canlı günlükteki kural sinyalleri (pano · aktif kurallar; gerçek zamanlı kayıt)
+    for r in (rapor.get("karne") or {}).get("son_sinyaller", []):
+        if r.get("tur") != "kural" or not yeni(r["zaman"]):
+            continue
+        aralik = r.get("aralik", "15m")
+        mum = cikis_mumu(r["hedef"], 1) if not r["hedef"].startswith("gun") else None
+        ck = _cikis(r["zaman"], aralik, mum)
+        ck["saat"] = _tsi(r["cikis_zamani"], _dakika(aralik))
+        satirlar.append({"sembol": r["sembol"], "aralik": aralik, "grafik": ARALIK_ADI.get(aralik, aralik), "kaynak": "Pano · aktif kural",
+                         "ad": r["aciklama"].split(" · ")[0], "yon": "LONG" if r["yon_yukari"] else "SHORT", "zaman": r["zaman"], "fiyat": r["giris"],
+                         "cikis": ck, "performans": f"tutarlılık %{float(r['tutarlilik']) * 100:.0f}",
+                         "link": f"grafik.html?s={r['sembol']}&k={r['kural_id']}", "kurallar": r["aciklama"].split(" · ")[1:2],
+                         "durum": {"tuttu": "kapandi", "tutmadi": "kapandi", "bekliyor": "acik"}.get(r["durum"], "bilinmiyor"),
+                         "net": r.get("net"), "dogru": None if r["durum"] not in ("tuttu", "tutmadi") else r["durum"] == "tuttu",
+                         "cikis_zaman": r["cikis_zamani"] if r["durum"] in ("tuttu", "tutmadi") else None})
+    satirlar.sort(key=lambda r: r["zaman"], reverse=True)
+    return {"saat": saat, "sinir": sinir.isoformat(), "zaman": rapor["olusturma"], "satirlar": satirlar,
+            "acik": sum(1 for r in satirlar if r["durum"] == "acik"), "kapanan": sum(1 for r in satirlar if r["durum"] == "kapandi"),
+            "net_kapanan": round(sum(r["net"] or 0 for r in satirlar if r["durum"] == "kapandi"), 3)}

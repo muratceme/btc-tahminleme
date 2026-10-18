@@ -91,6 +91,8 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
   sonrası artı yazanlar gösterilir. Denenen aday sayısı ve her dönemin sonucu açıkça yazılır (şans payı için).
 - **Şimdi gir (`simdi.html`):** tüm kaynakların son mumdaki sinyalleri tek listede: yön, çıkış mumu ve saati, grafik türü,
   geçmiş performans ve ilgili sayfaya bağlantı (doğru coin/strateji açılır). Açık pozisyonlar ve eğilimler ayrı bölümde.
+- **Son 1 saat (`son-saat.html`):** son 1 saat içinde sinyale dönmüş her kaynak; giriş/çıkış saati ve şu anki durum (AÇIK /
+  KAPANDI, net). Pencere `config.SON_SAAT`.
 - **Uzun vade (`umut.html`):** aynı tarama 1 saatlik ve 4 saatlik mumlarda; her zaman dilimi için tipik hareket ÷ komisyon
   oranı, al-tut karşılaştırması ve geçen stratejilerin trendli / yatay piyasadaki ayrı sonuçları.
 - **Sinyaller sayfası (`sinyaller.html`, üst menüde "Sinyaller · 24 saat"):** son 24 saatin her mumu için kısa vade ve gün sonu
