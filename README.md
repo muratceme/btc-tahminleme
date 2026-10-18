@@ -76,6 +76,9 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
   bir kuraldan daha az söz hakkı alır. Coin sekmesinde ve her coinin üstünde görünür.
 - **Geriye dönük kontrol:** 15, 30, 45 ve 60 dakika önce sistem hangi sinyali veriyordu, o an long ya da short açsaydın
   şu anki fiyatla komisyon dahil ne durumda olurdun.
+- **Sinyaller sayfası (`sinyaller.html`, üst menüde "Sinyaller · 24 saat"):** son 24 saatin her mumu için kısa vade ve gün sonu
+  sinyali, **çıkış ne zaman** (sinyali veren kaynakların hedefi: sonraki mum, 3 mum sonra, gün sonu…), çıkıştaki fiyat ve
+  komisyon dahil sonuç; mum grafiğinde giriş/çıkış işaretleri; şerit görünümü. Varsayılan olarak sadece sinyal olan mumlar listelenir.
 
 - **Komisyon sonrası net kazanç:** Her kural işlem gibi hesaplanır (giriş: sinyal mumu kapanışı, çıkış: hedefin bittiği mum).
   Maliyet vadeli için işlem başı %0,14, spot için %0,24 (komisyon + kayma); vadelide pozisyonun açık kaldığı her 8 saat için

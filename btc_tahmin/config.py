@@ -63,6 +63,8 @@ DERIN_HEDEFLER = (
 # Geriye dönük kontrol: bu kadar dakika önce sinyale göre işlem açılsaydı şimdi ne olurdu?
 GERIYE_DAKIKALAR = [15, 30, 45, 60]
 GERIYE_MAX_MUM = 12
+# Sinyal zaman çizelgesi (sinyaller.html): son kaç mum için sinyal ve çıkış hesaplanır (15m x 96 = 24 saat)
+CIZELGE_MUM = 96
 
 # Tutarlılık seviyeleri (Risk-A, Risk-B ...)
 TUTARLILIK_SEVIYELERI = [0.90, 0.85, 0.80, 0.75, 0.70]

@@ -429,7 +429,8 @@ def _yon_karti(c: dict) -> str:
               f'<th class="sayi">Giriş</th></tr></thead><tbody>{"".join(satir)}</tbody></table></div>'
               if satir else '<p class="kucuk">Bu zaman diliminde 15-60 dakikalık geriye dönük kontrol yapılamıyor.</p>')
            + f'<p class="cok-kucuk">Sonuçlar şimdiki fiyata göre, komisyon dahil (işlem başı %{y.get("maliyet_yuzde", 0):g}). '
-             'Kurallar yakın dönem verisiyle de test edildiği için geriye dönük sonuç biraz iyimser olabilir; gerçek ölçüm canlı karnededir.</p>')
+             'Kurallar yakın dönem verisiyle de test edildiği için geriye dönük sonuç biraz iyimser olabilir; gerçek ölçüm canlı karnededir. '
+             f'<a href="sinyaller.html#{_e(c["sembol"])}"><b>Son 24 saatin tamamı ve çıkış zamanları →</b></a></p>')
     return f'<div class="yon-izgara"><div class="kart">{sol}</div><div class="kart">{sag}</div></div>'
 
 
@@ -565,7 +566,7 @@ def _makro_karti(b: dict) -> str:
 # ------------------------------------------------------------------ ortak iskelet
 def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str = "", yenile: int | None = None) -> str:
     menu = "".join(f'<a href="{u}" class="{"aktif" if aktif_sayfa == u else ""}">{a}</a>'
-                   for u, a in (("rapor.html", "Pano"), ("nasil-calisir.html", "Nasıl çalışır?")))
+                   for u, a in (("rapor.html", "Pano"), ("sinyaller.html", "Sinyaller · 24 saat"), ("nasil-calisir.html", "Nasıl çalışır?")))
     canli = ('<span class="nokta" id="nokta"><i></i> CANLI</span><span>Güncelleme: <b id="yas" class="mono">—</b></span>'
              if ts else "") + '<span id="saat" class="mono"></span>'
     return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8">
@@ -897,7 +898,8 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 </ul>
 <p><b>Geriye dönük kontrol:</b> 15, 30, 45 ve 60 dakika önceki mumda sistem hangi sinyali veriyordu? O an long ya da short açsaydın, şu anki fiyatla komisyon dahil ne durumda olurdun?
 “Sinyale uysaydın” sütunu, o anki sinyalin yönünde açılan işlemin sonucudur. ✓ fiyatın sinyal yönünde gittiğini gösterir.</p>
-<p class="kucuk">Kurallar yakın dönem verisiyle de test edildiği için bu tablo biraz iyimser olabilir. Gerçek ölçüm canlı karnededir.</p>"""))
+<p class="kucuk">Kurallar yakın dönem verisiyle de test edildiği için bu tablo biraz iyimser olabilir. Gerçek ölçüm canlı karnededir.</p>
+<p><b>Sinyaller sayfası (son 24 saat):</b> Üst menüdeki <a href="sinyaller.html">Sinyaller · 24 saat</a> sayfası aynı hesabı son 24 saatin <b>her mumu</b> için yapar. Her sinyalin yanında <b>“Çıkış ne zaman?”</b> yazar: o sinyali veren kaynakların hedefi (sonraki mum, 3 mum sonra, gün sonu…). Birden çok kaynak farklı çıkış istiyorsa ağırlığı en yüksek olan ufuk “önerilen çıkış”, en uzun olanı “en geç” olarak gösterilir. “Sonuç” sütunu, sinyal mumunun kapanışında girip önerilen çıkış mumunda çıkmanın komisyon dahil getirisidir; çıkış mumu daha gelmediyse AÇIK yazar. Grafikte ▲▼ giriş, ● çıkış ve sonucu gösterir; şeritte bir hücreye tıklayınca tabloda o mum açılır.</p>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """
 <div class="tablo-sar"><table><thead><tr><th>Ad</th><th>Ne söyler?</th><th>Tutarlılık neyi ölçer?</th></tr></thead><tbody>
 <tr><td><b>Long riski</b></td><td>Şimdi long açarsan gün sonunda (TSİ 23:59) zararda olma ihtimali.</td><td>Model bu güvendeyken gün sonu yönünü ne sıklıkla doğru bildi.</td></tr>
@@ -1032,3 +1034,120 @@ def grafik_html() -> str:
              f'<script src="statik/grafik.js?v={_SV}"></script>'
              '<footer>Grafik: TradingView Lightweight Charts™ (Apache 2.0). Geçmiş isabet geleceğin garantisi değildir.</footer>')
     return _iskelet("Kural Grafiği · Kripto Risk Terminali", "grafik.html", govde)
+
+
+# ------------------------------------------------------------------ sinyaller (24 saat zaman çizelgesi)
+def _tsi(iso: str) -> str:
+    """ISO UTC zamanını TSİ saat:dakika olarak yazar."""
+    import datetime as _dt
+    t = _dt.datetime.fromisoformat(iso) + _dt.timedelta(hours=config.GUN_SONU_UTC_OFFSET_SAAT)
+    return f"{t:%H:%M}"
+
+
+def _cizelge_ozet(cz: list[dict], ufuk: str) -> dict:
+    sin = [r[ufuk] for r in cz if r[ufuk]["sinyal"] != "BEKLE"]
+    kapanan = [u["cikis"] for u in sin if u.get("cikis") and u["cikis"]["durum"] == "kapandi"]
+    return {"sinyal": len(sin), "long": sum(1 for u in sin if u["sinyal"] == "LONG"),
+            "short": sum(1 for u in sin if u["sinyal"] == "SHORT"),
+            "kapanan": len(kapanan), "acik": len(sin) - len(kapanan),
+            "dogru": sum(1 for c in kapanan if c["dogru"]), "net": round(sum(c["net"] for c in kapanan), 2),
+            "net_pozitif": sum(1 for c in kapanan if c["net"] > 0)}
+
+
+def _sinyal_coin(c: dict) -> str:
+    cz = c.get("cizelge") or []
+    sembol = c["sembol"]
+    aralik = c["aralik"]
+    if not cz:
+        return f'<section class="coin sz-coin" id="{_e(sembol)}" data-sembol="{_e(sembol)}"><div class="kart"><p class="kucuk">Çizelge verisi yok.</p></div></section>'
+    oz = {u: _cizelge_ozet(cz, u) for u in ("kisa", "gun_sonu")}
+
+    def kpi(ad, o):
+        oran = f"{o['dogru']}/{o['kapanan']}" if o["kapanan"] else "—"
+        return (f'<div class="kpi"><div class="e">{_e(ad)}</div><div class="d">{o["sinyal"]} sinyal</div>'
+                f'<div class="a"><span class="iyi">{o["long"]} long</span> · <span class="kotu">{o["short"]} short</span> · {o["acik"]} hâlâ açık</div></div>'
+                f'<div class="kpi"><div class="e">{_e(ad)} · kapananlarda</div>'
+                f'<div class="d {"iyi" if o["net"] > 0 else ("kotu" if o["net"] < 0 else "")}">{o["net"]:+.2f}%</div>'
+                f'<div class="a">yön doğru {oran} · komisyon sonrası artı {o["net_pozitif"]}/{o["kapanan"]}</div></div>')
+
+    def serit(ufuk):
+        hucre = []
+        for k, r in enumerate(cz):
+            u = r[ufuk]
+            sin = u["sinyal"]
+            sinif = {"LONG": "L", "SHORT": "S"}.get(sin, "")
+            if u.get("cikis") and u["cikis"]["durum"] == "acik":
+                sinif += " acik"
+            cik = f" · çıkış {u['cikis_mum']} mum sonra" if u.get("cikis_mum") else ""
+            hucre.append(f'<i class="{sinif}" title="{_tsi(r["zaman"])} TSİ · {sin}{cik}" data-satir="sz-{sembol}-{k}"></i>')
+        return f'<div class="serit">{"".join(hucre)}</div>'
+
+    satir = []
+    for k, r in enumerate(cz):
+        ks, gs = r["kisa"], r["gun_sonu"]
+        bekle = ks["sinyal"] == "BEKLE" and gs["sinyal"] == "BEKLE"
+
+        def hucre(u):
+            if u["sinyal"] == "BEKLE":
+                return '<td><span class="rozet notr">● BEKLE</span></td><td class="kucuk">—</td><td class="sayi mono">—</td><td class="sayi mono">—</td><td></td>'
+            c_ = u.get("cikis")
+            gec = f" (en geç {u['en_gec_cikis_mum']})" if u.get("en_gec_cikis_mum") and u["en_gec_cikis_mum"] != u["cikis_mum"] else ""
+            cikis_metni = (f"<b>{u['cikis_mum']} mum sonra</b>{gec}<div class='cok-kucuk'>"
+                           + (f"{_tsi(c_['zaman'])} TSİ" if c_ and c_["zaman"] else (f"~{_tsi(c_['beklenen_zaman'])} TSİ, henüz gelmedi" if c_ else ""))
+                           + "</div>")
+            if not c_:
+                sonuc = "—"
+            elif c_["durum"] == "acik":
+                sonuc = f'<span class="rozet orta">AÇIK</span><div class="cok-kucuk">şu an {_yuzde(c_["net"])}</div>'
+            else:
+                isaret = '<span class="rozet iyi">✓</span>' if c_["dogru"] else '<span class="rozet kotu">✕</span>'
+                sonuc = f'{_yuzde(c_["net"])} {isaret}'
+            dayanak = "<br>".join(_e(d) for d in u.get("dayanak", [])[:3])
+            return (f'<td>{_yon_rozeti(u["sinyal"])}<div class="cok-kucuk">güç %{u["guc"] * 100:.0f} · {u["long_oy"]}L/{u["short_oy"]}S</div></td>'
+                    f'<td>{cikis_metni}</td><td class="sayi mono">{_fiyat(c_["fiyat"]) if c_ else "—"}</td>'
+                    f'<td class="sayi mono">{sonuc}</td><td class="sz-dayanak">{dayanak}</td>')
+
+        satir.append(f'<tr id="sz-{sembol}-{k}" class="{"bekle" if bekle else ""}"><td><b>{_tsi(r["zaman"])}</b><div class="cok-kucuk">TSİ</div></td>'
+                     f'<td class="sayi mono">{_fiyat(r["fiyat"])}</td>{hucre(ks)}{hucre(gs)}</tr>')
+    ilk, son = _tsi(cz[0]["zaman"]), _tsi(cz[-1]["zaman"])
+    return f"""<section class="coin sz-coin" id="{_e(sembol)}" data-sembol="{_e(sembol)}">
+<div class="kart bolum">{_baslik(f"{sembol.replace('USDT', '')} · son 24 saat · {aralik} mumlar · {len(cz)} mum", "sinyaller")}
+<div class="kpi-izgara kpi-4">{kpi("Kısa vade", oz["kisa"])}{kpi("Gün sonu", oz["gun_sonu"])}</div>
+<p class="cok-kucuk" style="margin-top:10px">Kısa vade şeridi (yeşil long, kırmızı short, kesikli çerçeve: çıkış mumu henüz gelmedi). Bir hücreye tıklayınca tabloda o satıra gider.</p>
+{serit("kisa")}<div class="serit-saat"><span>{ilk}</span><span>{son} TSİ</span></div>
+<p class="cok-kucuk" style="margin-top:8px">Gün sonu şeridi</p>{serit("gun_sonu")}
+<div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="kucuk">Grafikte işaretle:</span>
+<button class="ufuk-dugme" data-ufuk="kisa" aria-pressed="true">Kısa vade</button><button class="ufuk-dugme" data-ufuk="gun_sonu" aria-pressed="false">Gün sonu</button>
+<span class="cok-kucuk">▲▼ giriş ve önerilen çıkış mumu (→N), ● çıkış ve komisyon sonrası sonuç</span></div>
+<div class="sz-grafik"></div></div>
+<div class="kart bolum"><div class="kart-baslik"><span>Mum mum sinyaller</span>
+<label class="kucuk" style="text-transform:none;letter-spacing:0;font-weight:500"><input type="checkbox" class="sz-hepsi"> BEKLE satırlarını da göster</label></div>
+<div class="tablo-sar"><table><thead><tr><th>Saat</th><th class="sayi">Fiyat</th>
+<th>Kısa vade</th><th>Çıkış ne zaman?</th><th class="sayi">Çıkış fiyatı</th><th class="sayi">Sonuç (net)</th><th>Dayanak</th>
+<th>Gün sonu</th><th>Çıkış ne zaman?</th><th class="sayi">Çıkış fiyatı</th><th class="sayi">Sonuç (net)</th><th>Dayanak</th></tr></thead>
+<tbody>{"".join(satir)}</tbody></table></div>
+<p class="cok-kucuk">“Çıkış ne zaman?”: o sinyali veren kaynakların hedefi; ağırlığı en yüksek olan ufuk önerilen çıkıştır (“en geç”: en uzun ufuklu kaynağın çıkışı).
+Sonuç, sinyal mumunun kapanışında girip önerilen çıkış mumunun kapanışında çıkmanın komisyon dahil (işlem başı %{(c.get("yon") or {}).get("maliyet_yuzde", 0):g}) getirisi.
+Çıkış mumu daha gelmediyse AÇIK yazar ve şu anki fiyata göre durum gösterilir. Kurallar yakın dönem verisiyle de test edildiği için bu tablo biraz iyimser olabilir; gerçek ölçüm canlı karnededir.</p></div>
+</section>"""
+
+
+def sinyaller_html(rapor: dict, yenile_sn: int | None = None) -> str:
+    import json as _json
+    coinler = rapor["coinler"]
+    sekmeler = "".join(
+        f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>{_sekme_yon(c)}'
+        f'<span class="cok-kucuk mono">{_cizelge_ozet(c.get("cizelge") or [], "kisa")["sinyal"]} sinyal</span></button>'
+        for s, c in coinler.items())
+    veri = {s: {"mumlar": c.get("cizelge_mumlar") or [], "cizelge": c.get("cizelge") or []} for s, c in coinler.items()}
+    govde = f"""<main>
+<div class="kart bolum"><p class="kucuk" style="margin:0">Son 24 saatte her {next(iter(coinler.values()))['aralik'] if coinler else '15m'} mumda sistem ne dedi, <b>ne zaman çıkmanı</b> istedi ve o çıkışta ne oldu?
+Pano'daki “geriye dönük” kartı sadece son 4 mumu gösterir; burası tamamı. Varsayılan olarak yalnızca sinyal olan mumlar listelenir.</p></div>
+<div class="sekmeler" role="tablist">{sekmeler}</div>
+{"".join(_sinyal_coin(c) for c in coinler.values())}
+</main>
+<script>window.SZ={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
+<script src="statik/lightweight-charts.standalone.production.js"></script>
+<script src="statik/sinyaller.js?v={_SV}"></script>
+<footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
+    return _iskelet("Sinyaller · 24 saat · Kripto Risk Terminali", "sinyaller.html", govde, "", rapor["olusturma"], yenile_sn)

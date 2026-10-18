@@ -275,6 +275,11 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "simulasyon": simulasyon,
         "pozisyon": pozisyon_onerisi(float(o["close"].iloc[-1]), tablo["ozet"], kirim),
         "yon": sinyal.hesapla(o, KT, kurallar, yon, aralik),
+        "cizelge": sinyal.zaman_cizelgesi(o, KT, kurallar, yon, aralik),
+        "cizelge_mumlar": [[int((t - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1)), float(a), float(b), float(c_), float(d)]
+                           for t, a, b, c_, d in zip(o["time"].iloc[-config.CIZELGE_MUM - 40:], o["open"].iloc[-config.CIZELGE_MUM - 40:],
+                                                     o["high"].iloc[-config.CIZELGE_MUM - 40:], o["low"].iloc[-config.CIZELGE_MUM - 40:],
+                                                     o["close"].iloc[-config.CIZELGE_MUM - 40:])],
         "aktif_tum": [{k: r[k] for k in ("id", "hedef", "yon", "tutarlilik", "kosullar")}
                       for liste in kurallar.values() for r in liste if r["aktif_su_an"]],
         "kural_sayisi": {k: len(v) for k, v in kurallar.items()},
