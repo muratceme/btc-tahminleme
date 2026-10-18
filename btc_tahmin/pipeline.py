@@ -279,6 +279,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "yon": sinyal.hesapla(o, KT, kurallar, yon, aralik),
         "cizelge": sinyal.zaman_cizelgesi(o, KT, kurallar, yon, aralik),
         "fable": fable.hesapla(o),
+        "tarama": (lambda t: {**t, "sayfa": fable.tarama_sayfa_verisi(o, t)})(fable.tarama(o)),
         "cizelge_mumlar": [[int((t - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1)), float(a), float(b), float(c_), float(d)]
                            for t, a, b, c_, d in zip(o["time"].iloc[-config.CIZELGE_MUM - 40:], o["open"].iloc[-config.CIZELGE_MUM - 40:],
                                                      o["high"].iloc[-config.CIZELGE_MUM - 40:], o["low"].iloc[-config.CIZELGE_MUM - 40:],

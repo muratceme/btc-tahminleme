@@ -584,7 +584,7 @@ def _makro_karti(b: dict) -> str:
 def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str = "", yenile: int | None = None) -> str:
     menu = "".join(f'<a href="{u}" class="{"aktif" if aktif_sayfa == u else ""}">{a}</a>'
                    for u, a in (("rapor.html", "Pano"), ("sinyaller.html", "Sinyaller · 24 saat"), ("fable.html", "Fable sinyalleri"),
-                                ("nasil-calisir.html", "Nasıl çalışır?")))
+                                ("tarama.html", "Strateji tarama"), ("nasil-calisir.html", "Nasıl çalışır?")))
     canli = ('<span class="nokta" id="nokta"><i></i> CANLI</span><span>Güncelleme: <b id="yas" class="mono">—</b></span>'
              if ts else "") + '<span id="saat" class="mono"></span>'
     return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8">
@@ -919,6 +919,7 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <p class="kucuk">Kurallar yakın dönem verisiyle de test edildiği için bu tablo biraz iyimser olabilir. Gerçek ölçüm canlı karnededir.</p>
 <p><b>Sinyal yoksa “eğilim”:</b> %{int(config.MIN_TUTARLILIK * 100)}+ tutarlı hiçbir kaynak aktif değilse sistem BEKLE der; ama yanında modellerin o anki <b>eğilimini</b> de yazar (ör. “eğilim LONG %57 · model doğruluğu %54 · düşük güven”). Model doğruluğu, o modelin test dönemindeki genel isabetidir; %50 yazı-tura demektir. Eğilim işlem sinyali değildir, sadece “modeller hangi tarafa bakıyor” bilgisidir. Daha sık ama daha zayıf sinyal istersen ayarlar/kullanici.json içinde <span class="mono">"min_tutarlilik": 0.6</span> yazabilirsin; kurallar o eşikle yeniden aranır ve zayıf kaynaklar Wilson ağırlığıyla az söz hakkı alır.</p>
 <p><b>Fable sinyalleri sayfası:</b> madencilikten bağımsız, kuralları baştan yazılmış dört klasik strateji (trend takibi, ortalamaya dönüş, sıkışma kırılımı, momentum teyitli). Kurallar veriden seçilmediği için seçim yanlılığı yoktur; tüm geçmişteki işlem sonucu, kâr faktörü, max düşüş ve kayıp serisi olduğu gibi gösterilir. Her stratejinin çıkış kuralı bellidir (Supertrend dönünce, orta banda dönünce, N mum sonra…). Son 24 saat şeridi, grafik ve tablo Sinyaller sayfasıyla aynı mantıktadır.</p>
+<p><b>Strateji tarama sayfası:</b> el yazımı stratejiler zarar yazarsa tersinden gidilir: beş ailenin yüzlerce varyantı (EMA çiftleri, RSI eşikleri, hacim filtresi, çıkış süresi, sadece long/short) denenir, veri %60/%20/%20 bölünür ve yalnızca üç dönemde de komisyon sonrası artı yazanlar gösterilir. Denenen aday sayısı açıkça yazılır; geçen sayı denenenin %5'inden azsa şans payı yüksektir. Asıl ölçüm canlı takiptir.</p>
 <p><b>Sinyaller sayfası (son 24 saat):</b> Üst menüdeki <a href="sinyaller.html">Sinyaller · 24 saat</a> sayfası aynı hesabı son 24 saatin <b>her mumu</b> için yapar. Her sinyalin yanında <b>“Çıkış ne zaman?”</b> yazar: o sinyali veren kaynakların hedefi (sonraki mum, 3 mum sonra, gün sonu…). Birden çok kaynak farklı çıkış istiyorsa ağırlığı en yüksek olan ufuk “önerilen çıkış”, en uzun olanı “en geç” olarak gösterilir. “Sonuç” sütunu, sinyal mumunun kapanışında girip önerilen çıkış mumunda çıkmanın komisyon dahil getirisidir; çıkış mumu daha gelmediyse AÇIK yazar. Grafikte ▲▼ giriş, ● çıkış ve sonucu gösterir; şeritte bir hücreye tıklayınca tabloda o mum açılır.</p>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """
 <div class="tablo-sar"><table><thead><tr><th>Ad</th><th>Ne söyler?</th><th>Tutarlılık neyi ölçer?</th></tr></thead><tbody>
@@ -1214,6 +1215,22 @@ def _fable_istatistik_kutu(ad: str, st: dict, vurgu: bool = False) -> str:
             f'en uzun kayıp serisi {st["en_uzun_kayip_serisi"]} · ort. süre {st["ort_sure_mum"]} mum</div></div>')
 
 
+def _donem_kutulari(d: dict | None) -> str:
+    """Strateji taramasında eğitim / doğrulama / test dönemi sonuçları (test hiç görülmemiş son %20)."""
+    if not d:
+        return ""
+    def kutu(ad, x, aciklama):
+        if not x.get("islem"):
+            return f'<div class="kpi"><div class="e">{ad}</div><div class="d">—</div><div class="a">{aciklama}</div></div>'
+        kf = f"{x['kar_faktoru']:.2f}" if x.get("kar_faktoru") is not None else "∞"
+        return (f'<div class="kpi"><div class="e">{ad}</div><div class="d {"iyi" if x["toplam_net"] > 0 else "kotu"}">{x["toplam_net"]:+.1f}%</div>'
+                f'<div class="a">{x["islem"]} işlem · işlem başı {x["ort_net"]:+.3f}% · artı %{x["net_kazanma_orani"] * 100:.0f} · kâr faktörü {kf}<br>{aciklama}</div></div>')
+    return ('<div class="kpi-izgara kpi-4" style="margin-bottom:10px">'
+            + kutu("Eğitim · ilk %60", d["egitim"], "varyant burada seçildi (iyimser)")
+            + kutu("Doğrulama · sonraki %20", d["dogrulama"], "burada da artı yazmalı")
+            + kutu("TEST · son %20 (hiç görülmemiş)", d["test"], "asıl not budur") + "</div>")
+
+
 def _fable_strateji(sembol: str, aralik: str, sid: str, f: dict, maliyet: float) -> str:
     cz = f["cizelge"]
     sin = [r for r in cz if r["sinyal"] != "BEKLE"]
@@ -1253,6 +1270,7 @@ def _fable_strateji(sembol: str, aralik: str, sid: str, f: dict, maliyet: float)
 <ul class="liste kucuk">{"".join(f"<li><span>{_e(k)}</span></li>" for k in f["kurallar"])}</ul>
 <p class="cok-kucuk">Bu kurallar baştan yazıldı, veriden seçilmedi; aşağıdaki sonuçlar <b>tüm geçmişin</b> ({f['veri_gun']} gün) olduğu gibi dökümüdür, seçim yanlılığı yoktur.
 Tek pozisyon: pozisyon açıkken gelen sinyal atlanır. Komisyon (işlem başı %{maliyet:g}) ve vadelide funding düşülmüştür. Kasa getirisi: her işlemde kasanın tamamı, kaldıraçsız.</p>
+{_donem_kutulari(f.get("donemler"))}
 <div class="kpi-izgara kpi-4">{_fable_istatistik_kutu(f"Tüm geçmiş · {f['veri_gun']} gün", st["tum"], True)}{_fable_istatistik_kutu("Son 90 gün", st["son90"])}{_fable_istatistik_kutu("Son 30 gün", st["son30"])}
 <div class="kpi"><div class="e">Son 24 saat</div><div class="d {"iyi" if net24 > 0 else ("kotu" if net24 < 0 else "")}">{len(sin)} sinyal</div>
 <div class="a">{sum(1 for r in sin if r["sinyal"] == "LONG")} long · {sum(1 for r in sin if r["sinyal"] == "SHORT")} short · kapananlarda net {net24:+.2f}% · yön doğru {sum(1 for c in kap if c["dogru"])}/{len(kap)}</div></div></div>
@@ -1305,3 +1323,53 @@ bütün geçmişteki sonuç olduğu gibi gösteriliyor. Her stratejinin <b>çık
 <script src="statik/fable.js?v={_SV}"></script>
 <footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
     return _iskelet("Fable sinyalleri · Kripto Risk Terminali", "fable.html", govde, "", rapor["olusturma"], yenile_sn)
+
+
+# ------------------------------------------------------------------ strateji tarama sayfası
+def tarama_html(rapor: dict, yenile_sn: int | None = None) -> str:
+    import json as _json
+    coinler = rapor["coinler"]
+    sekmeler = "".join(
+        f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>'
+        f'<span class="cok-kucuk mono">{len((c.get("tarama") or {}).get("secilen", []))} strateji geçti</span></button>'
+        for s, c in coinler.items())
+    veri, bolumler = {}, []
+    for s_, c in coinler.items():
+        t = c.get("tarama") or {}
+        sayfa = t.get("sayfa") or {}
+        veri[s_] = {"mumlar": c.get("cizelge_mumlar") or [],
+                    "stratejiler": {sid: [{"zaman": r["zaman"], "sinyal": r["sinyal"], "cikis": r["cikis"]} for r in f["cizelge"]]
+                                    for sid, f in sayfa.items()}}
+        g = t.get("gecen") or {}
+        ozet = (f'<div class="kart bolum"><div class="kart-baslik"><span>{_e(s_.replace("USDT", ""))} · tarama özeti</span></div>'
+                f'<div class="kpi-izgara kpi-4"><div class="kpi"><div class="e">Denenen varyant</div><div class="d">{t.get("denenen", 0)}</div><div class="a">5 aile × parametreler × çıkış süresi × yön</div></div>'
+                f'<div class="kpi"><div class="e">Eğitimde artı</div><div class="d">{g.get("egitim", 0)}</div><div class="a">ilk %60 dönemde kârlı</div></div>'
+                f'<div class="kpi"><div class="e">Doğrulamada da artı</div><div class="d">{g.get("dogrulama", 0)}</div><div class="a">sonraki %20 dönemde de kârlı</div></div>'
+                f'<div class="kpi"><div class="e">Testte de artı</div><div class="d {"iyi" if g.get("test") else ""}">{g.get("test", 0)}</div><div class="a">hiç görülmemiş son %20 dönemde de kârlı (gösterilenler)</div></div></div>'
+                f'<p class="cok-kucuk">Ölçütler: {_e(t.get("olcutler", ""))}. <b>Dürüst uyarı:</b> {t.get("denenen", 0)} aday denendiğinde bir kısmı şans eseri üç dönemde de artı yazabilir; '
+                f'geçen sayı denenenin %5\'inden azsa şans payı yüksektir. Gerçek ölçüm, bu stratejileri bir süre canlı izlemektir (son 24 saat şeridi ve son 30 gün kutusu).</p></div>')
+        if not sayfa:
+            bolumler.append(f'<section class="coin sz-coin fb-coin" id="{_e(s_)}" data-sembol="{_e(s_)}">{ozet}'
+                            '<div class="kart"><p class="kucuk">Üç dönemde de artı yazan varyant yok. Bu dürüst bir sonuç: bu zaman diliminde bu aileler komisyonu yenemiyor. '
+                            'Daha uzun mumda (<span class="mono">--aralik 1h</span>) tekrar dene.</p></div></section>')
+            continue
+        dugme = "".join(
+            f'<button class="ufuk-dugme strat-dugme" data-strat="{sid}" aria-pressed="{"true" if i == 0 else "false"}" style="border-left:3px solid {f["renk"]}">'
+            f'{_e(f["ad"])} <span class="mono cok-kucuk iyi">test {f["donemler"]["test"]["toplam_net"]:+.1f}%</span></button>'
+            for i, (sid, f) in enumerate(sayfa.items()))
+        maliyet = (c.get("yon") or {}).get("maliyet_yuzde", 0)
+        bolumler.append(f'<section class="coin sz-coin fb-coin" id="{_e(s_)}" data-sembol="{_e(s_)}">{ozet}'
+                        f'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span class="kucuk">Geçen stratejiler (test kâr faktörüne göre):</span>{dugme}</div>'
+                        + "".join(_fable_strateji(s_, c["aralik"], sid, f, maliyet) for sid, f in sayfa.items()) + "</section>")
+    govde = f"""<main>
+<div class="kart bolum"><p class="kucuk" style="margin:0"><b>Strateji tarama:</b> Fable sinyalleri sayfasındaki el yazımı stratejiler gerçek veride zarar yazınca tersinden gittim: beş strateji ailesinin yüzlerce varyantı
+(EMA çiftleri, RSI eşikleri, hacim filtresi, çıkış süresi, sadece long / sadece short…) denenir. Veri kronolojik olarak %60 eğitim / %20 doğrulama / %20 test diye bölünür ve yalnızca
+<b>üç dönemde de komisyon sonrası artı yazan</b> varyantlar gösterilir. Kaç adayın denendiği yazılıdır; bu sayı büyüdükçe şans eseri geçenlerin payı artar, o yüzden canlı takip şart.</p></div>
+<div class="sekmeler" role="tablist">{sekmeler}</div>
+{"".join(bolumler)}
+</main>
+<script>window.FB={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
+<script src="statik/lightweight-charts.standalone.production.js"></script>
+<script src="statik/fable.js?v={_SV}"></script>
+<footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
+    return _iskelet("Strateji tarama · Kripto Risk Terminali", "tarama.html", govde, "", rapor["olusturma"], yenile_sn)

@@ -184,3 +184,16 @@ def test_fable_islemler_cakismaz_ve_cikis_sinirli():
         assert len(cz) == 51 and all(r["sinyal"] in ("LONG", "SHORT", "BEKLE") for r in cz)
     r = fable.hesapla(o)
     assert set(r) == {s["id"] for s in fable.STRATEJILER}
+
+
+def test_tarama_sadece_uc_donemde_arti():
+    from btc_tahmin import fable
+    from btc_tahmin.features import veri_seti_hazirla
+    from tests.sentetik_test import sahte_mumlar
+    o, _, _ = veri_seti_hazirla({"BTCUSDT": sahte_mumlar(n=8000, tohum=5)}, ana="BTCUSDT")
+    t = fable.tarama(o)
+    assert t["denenen"] > 300 and t["gecen"]["test"] <= t["gecen"]["dogrulama"] <= t["gecen"]["egitim"]
+    for s in t["secilen"]:
+        assert all(s["donemler"][d]["toplam_net"] > 0 for d in ("egitim", "dogrulama", "test"))
+    sayfa = fable.tarama_sayfa_verisi(o, t)
+    assert set(sayfa) == {s["id"] for s in t["secilen"]}
