@@ -115,7 +115,7 @@ def kaydet(rapor: dict, yenile_sn: int | None = None):
     import shutil
     from pathlib import Path
 
-    from .pano import fable_html, grafik_html, nasil_calisir_html, pano_html, simdi_html, sinyaller_html, son_saat_html, tarama_html, umut_html
+    from .pano import fable_html, grafik_html, nasil_calisir_html, pano_html, simdi_html, sinyaller_html, son_saat_html, tahmin_html, tarama_html, umut_html
     (config.CIKTI_DIR / "nasil-calisir.html").write_text(nasil_calisir_html(), encoding="utf-8")
     (config.CIKTI_DIR / "grafik.html").write_text(grafik_html(), encoding="utf-8")
     statik = config.CIKTI_DIR / "statik"
@@ -128,6 +128,7 @@ def kaydet(rapor: dict, yenile_sn: int | None = None):
     (config.CIKTI_DIR / "umut.html").write_text(umut_html(rapor, yenile_sn), encoding="utf-8")
     (config.CIKTI_DIR / "simdi.html").write_text(simdi_html(rapor, yenile_sn), encoding="utf-8")
     (config.CIKTI_DIR / "son-saat.html").write_text(son_saat_html(rapor, yenile_sn), encoding="utf-8")
+    (config.CIKTI_DIR / "tahmin.html").write_text(tahmin_html(rapor, yenile_sn), encoding="utf-8")
     yol = config.CIKTI_DIR / "rapor.html"
     yol.write_text(pano_html(rapor, yenile_sn), encoding="utf-8")
     return yol

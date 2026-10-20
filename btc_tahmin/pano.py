@@ -8,6 +8,7 @@ from __future__ import annotations
 import html
 import math
 import re
+from datetime import datetime, timezone
 
 from . import config
 from .market import DOM_COINLER
@@ -584,7 +585,8 @@ def _makro_karti(b: dict) -> str:
 def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str = "", yenile: int | None = None) -> str:
     menu = "".join(f'<a href="{u}" class="{"aktif" if aktif_sayfa == u else ""}">{a}</a>'
                    for u, a in (("rapor.html", "Pano"), ("simdi.html", "⚡ Şimdi gir"), ("son-saat.html", "Son 1 saat"), ("sinyaller.html", "Sinyaller · 24 saat"), ("fable.html", "Fable sinyalleri"),
-                                ("tarama.html", "Strateji tarama"), ("umut.html", "Uzun vade"), ("nasil-calisir.html", "Nasıl çalışır?")))
+                                ("tarama.html", "Strateji tarama"), ("umut.html", "Uzun vade"), ("tahmin.html", "Mum tahmini"),
+                                ("nasil-calisir.html", "Nasıl çalışır?")))
     canli = ('<span class="nokta" id="nokta"><i></i> CANLI</span><span>Güncelleme: <b id="yas" class="mono">—</b></span>'
              if ts else "") + '<span id="saat" class="mono"></span>'
     return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8">
@@ -923,6 +925,7 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <p><b>Uzun vade sayfası:</b> aynı strateji taraması 1 saatlik ve 4 saatlik mumlarda çalıştırılır. Her zaman dilimi için “tipik mum hareketi ÷ komisyon” oranı verilir (1'in altı: komisyon hareketi yiyor; 2 ve üstü: nefes alanı var), al-tut ile karşılaştırılır ve geçen stratejiler trendli (ADX > 25) ve yatay piyasada ayrı ölçülür.</p>
 <p><b>Şimdi gir sayfası:</b> tüm sayfalardaki kaynakların son mumdaki sinyallerini tek listede toplar: coin, yön, çıkış mumu ve saati, grafik türü (mum süresi), geçmiş performans ve o kaynağın sayfasına bağlantı. Strateji sayfalarındaki açık pozisyonlar ve düşük güvenli eğilimler ayrı bölümlerde. Sinyal olmaması normaldir; sayfa her güncellemede yenilenir.</p>
 <p><b>Son 1 saat sayfası:</b> Şimdi gir ile aynı mantık, ama son 1 saat içinde sinyale dönmüş her kaynak: giriş saati, çıkış saati, şu anki durum (AÇIK ya da KAPANDI ve net sonuç). Aktif kural satırları canlı sinyal günlüğünden, diğerleri 24 saatlik çizelgeden gelir.</p>
+<p><b>Mum tahmini sayfası:</b> 1, 2, 4 ve 8 mum ufukları için ayrı regresyon modelleri (Gradient Boosting) indikatörlerden yüzde hareketi tahmin eder. Şu andan itibaren 8 mumluk tahmin yolu ve %80 hata bandı; son 1 gün için her mumda önceden yapılmış tahmin ile gerçek yan yana, yön isabeti ve ortalama hata ile. Son gün eğitime girmez. Modeller günde bir eğitilir.</p>
 <p><b>Sinyaller sayfası (son 24 saat):</b> Üst menüdeki <a href="sinyaller.html">Sinyaller · 24 saat</a> sayfası aynı hesabı son 24 saatin <b>her mumu</b> için yapar. Her sinyalin yanında <b>“Çıkış ne zaman?”</b> yazar: o sinyali veren kaynakların hedefi (sonraki mum, 3 mum sonra, gün sonu…). Birden çok kaynak farklı çıkış istiyorsa ağırlığı en yüksek olan ufuk “önerilen çıkış”, en uzun olanı “en geç” olarak gösterilir. “Sonuç” sütunu, sinyal mumunun kapanışında girip önerilen çıkış mumunda çıkmanın komisyon dahil getirisidir; çıkış mumu daha gelmediyse AÇIK yazar. Grafikte ▲▼ giriş, ● çıkış ve sonucu gösterir; şeritte bir hücreye tıklayınca tabloda o mum açılır.</p>"""))
     s.append(bol("risk-turleri", "9. Risk türleri", """
 <div class="tablo-sar"><table><thead><tr><th>Ad</th><th>Ne söyler?</th><th>Tutarlılık neyi ölçer?</th></tr></thead><tbody>
@@ -1061,6 +1064,11 @@ def grafik_html() -> str:
 
 
 # ------------------------------------------------------------------ sinyaller (24 saat zaman çizelgesi)
+def _mum_scriptleri(anahtarlar) -> str:
+    """Grafikler için mum verisi dosyalarını (cikti/veri/mum_*.js) yükleyen script etiketleri."""
+    return "".join(f'<script src="veri/mum_{_e(a)}.js?v={_SV}"></script>' for a in sorted({a for a in anahtarlar if a}))
+
+
 def _tsi(iso: str) -> str:
     """ISO UTC zamanını TSİ saat:dakika olarak yazar."""
     import datetime as _dt
@@ -1190,14 +1198,15 @@ def sinyaller_html(rapor: dict, yenile_sn: int | None = None) -> str:
         f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>{_sekme_yon(c)}'
         f'<span class="cok-kucuk mono">{_cizelge_ozet(c.get("cizelge") or [], "kisa")["sinyal"]} sinyal</span></button>'
         for s, c in coinler.items())
-    veri = {s: {"mumlar": c.get("cizelge_mumlar") or [], "cizelge": c.get("cizelge") or []} for s, c in coinler.items()}
+    veri = {s: {"mum": c.get("mum_dosyasi"), "cizelge": c.get("cizelge") or []} for s, c in coinler.items()}
+    mum_js = _mum_scriptleri(c.get("mum_dosyasi") for c in coinler.values())
     govde = f"""<main>
 <div class="kart bolum"><p class="kucuk" style="margin:0">Son 24 saatte her {next(iter(coinler.values()))['aralik'] if coinler else '15m'} mumda sistem ne dedi, <b>ne zaman çıkmanı</b> istedi ve o çıkışta ne oldu?
 Pano'daki “geriye dönük” kartı sadece son 4 mumu gösterir; burası tamamı. Varsayılan olarak yalnızca sinyal olan mumlar listelenir.</p></div>
 <div class="sekmeler" role="tablist">{sekmeler}</div>
 {"".join(_sinyal_coin(c) for c in coinler.values())}
 </main>
-<script>window.SZ={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
+{mum_js}<script>window.SZ={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
 <script src="statik/lightweight-charts.standalone.production.js"></script>
 <script src="statik/sinyaller.js?v={_SV}"></script>
 <footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
@@ -1327,7 +1336,7 @@ def fable_html(rapor: dict, yenile_sn: int | None = None) -> str:
         f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>'
         f'<span class="cok-kucuk mono">{sum(1 for f in (c.get("fable") or {}).values() for r in f["cizelge"] if r["sinyal"] != "BEKLE")} sinyal / 24s</span></button>'
         for s, c in coinler.items())
-    veri = {s: {"mumlar": c.get("cizelge_mumlar") or [],
+    veri = {s: {"mum": c.get("mum_dosyasi"),
                 "stratejiler": {sid: [{"zaman": r["zaman"], "sinyal": r["sinyal"], "cikis": r["cikis"]} for r in f["cizelge"]]
                                 for sid, f in (c.get("fable") or {}).items()}} for s, c in coinler.items()}
     govde = f"""<main>
@@ -1337,7 +1346,7 @@ bütün geçmişteki sonuç olduğu gibi gösteriliyor. Her stratejinin <b>çık
 <div class="sekmeler" role="tablist">{sekmeler}</div>
 {"".join(_fable_coin(c) for c in coinler.values())}
 </main>
-<script>window.FB={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
+{_mum_scriptleri(v.get("mum") for v in veri.values())}<script>window.FB={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
 <script src="statik/lightweight-charts.standalone.production.js"></script>
 <script src="statik/fable.js?v={_SV}"></script>
 <footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
@@ -1356,7 +1365,7 @@ def tarama_html(rapor: dict, yenile_sn: int | None = None) -> str:
     for s_, c in coinler.items():
         t = c.get("tarama") or {}
         sayfa = t.get("sayfa") or {}
-        veri[s_] = {"mumlar": c.get("cizelge_mumlar") or [],
+        veri[s_] = {"mum": c.get("mum_dosyasi"),
                     "stratejiler": {sid: [{"zaman": r["zaman"], "sinyal": r["sinyal"], "cikis": r["cikis"]} for r in f["cizelge"]]
                                     for sid, f in sayfa.items()}}
         g = t.get("gecen") or {}
@@ -1387,7 +1396,7 @@ def tarama_html(rapor: dict, yenile_sn: int | None = None) -> str:
 <div class="sekmeler" role="tablist">{sekmeler}</div>
 {"".join(bolumler)}
 </main>
-<script>window.FB={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
+{_mum_scriptleri(v.get("mum") for v in veri.values())}<script>window.FB={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
 <script src="statik/lightweight-charts.standalone.production.js"></script>
 <script src="statik/fable.js?v={_SV}"></script>
 <footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
@@ -1434,7 +1443,7 @@ def umut_html(rapor: dict, yenile_sn: int | None = None) -> str:
         tf_dugme, tf_blok = [], []
         for i, (tf, d) in enumerate(u["dilimler"].items()):
             anahtar = f"{s_}_{tf}"
-            veri[anahtar] = {"mumlar": d["mumlar"],
+            veri[anahtar] = {"mum": d.get("mum_dosyasi"),
                              "stratejiler": {sid: [{"zaman": r["zaman"], "sinyal": r["sinyal"], "cikis": r["cikis"]} for r in f["cizelge"]] for sid, f in d["sayfa"].items()}}
             g = d["tarama"]["gecen"]
             tf_dugme.append(f'<button class="ufuk-dugme tf-dugme" data-tf="{tf}" aria-pressed="{"true" if i == 0 else "false"}">{_e(d["ad"])} <span class="mono cok-kucuk">{d["secilen_sayisi"]} geçti</span></button>')
@@ -1462,7 +1471,7 @@ geçen stratejiler <b>trendli ve yatay piyasada</b> ayrı ölçülür (bir strat
 <div class="sekmeler" role="tablist">{sekmeler}</div>
 {"".join(bolumler)}
 </main>
-<script>window.FB={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
+{_mum_scriptleri(v.get("mum") for v in veri.values())}<script>window.FB={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
 <script src="statik/lightweight-charts.standalone.production.js"></script>
 <script src="statik/fable.js?v={_SV}"></script>
 <footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
@@ -1560,3 +1569,80 @@ def son_saat_html(rapor: dict, yenile_sn: int | None = None) -> str:
 </main>
 <footer>{_e(rapor['uyari'])}</footer>"""
     return _iskelet("Son 1 saat · Kripto Risk Terminali", "son-saat.html", govde, "", rapor["olusturma"], yenile_sn)
+
+
+# ------------------------------------------------------------------ mum tahmini
+def _ts_tsi(ts: int) -> str:
+    return _tsi(datetime.fromtimestamp(ts, tz=timezone.utc).isoformat())
+
+
+def _tahmin_coin(c: dict) -> str:
+    t = c.get("tahmin")
+    sembol, aralik = c["sembol"], c["aralik"]
+    if not t:
+        return f'<section class="coin" id="{_e(sembol)}"><div class="kart"><p class="kucuk">Tahmin modeli yok (scikit-learn kurulu değil).</p></div></section>'
+    oz = t["ozet"]
+    dk = t["mum_suresi_sn"] // 60
+    yi = oz.get("yon_isabeti")
+    yol = []
+    for y in t["yol"]:
+        bant = (_fiyat(y["alt"]) + " – " + _fiyat(y["ust"])) if y["alt"] is not None else "—"
+        bant_y = f"±%{y['band_yuzde']:.2f}" if y["band_yuzde"] is not None else "—"
+        yol.append(f'<tr><td><b>{y["mum"]} mum sonra</b><div class="cok-kucuk">{y["mum"] * dk} dk · {_ts_tsi(y["zaman"])} TSİ</div></td>'
+                   f'<td class="sayi mono"><b>{_fiyat(y["tahmin"])}</b></td><td class="sayi mono">{_yuzde(y["tahmin_yuzde"])}</td>'
+                   f'<td class="sayi mono">{bant}</td><td class="sayi mono">{bant_y}</td></tr>')
+    gec = []
+    for g in reversed(t["gecmis"]):
+        if "gercek_1" in g:
+            isaret = '<span class="rozet iyi">✓</span>' if g["yon_dogru"] else ('<span class="rozet kotu">✕</span>' if g["yon_dogru"] is False else "—")
+            son = (f'<td class="sayi mono">{_fiyat(g["gercek_1"])} <span class="cok-kucuk">{_yuzde(g["gercek_yuzde_1"])}</span></td>'
+                   f'<td class="sayi mono">{isaret} <span class="cok-kucuk">hata %{g["hata_yuzde"]:.3f}</span></td>')
+        else:
+            son = '<td class="sayi mono">henüz kapanmadı</td><td class="sayi mono">—</td>'
+        gec.append(f'<tr><td><b>{_ts_tsi(g["zaman"])}</b> <span class="cok-kucuk">TSİ</span></td><td class="sayi mono">{_fiyat(g["kapanis"])}</td>'
+                   f'<td class="sayi mono">{_fiyat(g["tahmin_1"])} <span class="cok-kucuk">{_yuzde(g["tahmin_yuzde_1"])}</span></td>{son}</tr>')
+    yi_sinif = "iyi" if yi and yi > 0.55 else ("kotu" if yi is not None and yi < 0.45 else "")
+    yi_metin = f"%{yi * 100:.0f}" if yi is not None else "—"
+    b8 = oz["band_yuzde"].get("8") or 0
+    b1 = oz["band_yuzde"].get("1") or 0
+    kpi = (f'<div class="kpi"><div class="e">Son 1 gün · yön isabeti</div><div class="d {yi_sinif}">{yi_metin}</div><div class="a">{oz["n"]} mum · %50 yazı-tura demek</div></div>'
+           f'<div class="kpi"><div class="e">Son 1 gün · ortalama hata</div><div class="d">%{oz["ort_hata_yuzde"] or 0:.3f}</div>'
+           f'<div class="a">gerçek ortalama hareket %{oz["ort_gercek_hareket_yuzde"] or 0:.3f} · hata hareketten büyükse tahmin "sıfır" demekten iyi değildir</div></div>'
+           f'<div class="kpi"><div class="e">Hata bandı (%80)</div><div class="d">±%{b8:.2f}</div><div class="a">8 mum için · 1 mum ±%{b1:.2f}</div></div>'
+           f'<div class="kpi"><div class="e">Model</div><div class="d" style="font-size:14px">GB regresyon ×4</div><div class="a">eğitim {_tsi(t["egitim_zamani"])} TSİ · son gün eğitime girmedi</div></div>')
+    return f"""<section class="coin tahmin-coin" id="{_e(sembol)}" data-sembol="{_e(sembol)}">
+<div class="kart bolum">{_baslik(f"{sembol.replace('USDT', '')} · {aralik} mum tahmini", "tahmin")}
+<div class="kpi-izgara kpi-4">{kpi}</div>
+<p class="cok-kucuk" style="margin-top:10px">Grafik: mumlar gerçek; <span style="color:#fbbf24">sarı çizgi</span> her mum için 1 mum önceden yapılmış kapanış tahmini (son 1 gün, modelin görmediği veri);
+<span style="color:#60a5fa">mavi kesikli</span> şu andan itibaren 8 mumluk tahmin yolu, soluk mavi çizgiler %80 hata bandı.</p>
+<div class="sz-grafik"></div></div>
+<div class="iki-sutun">
+<div class="kart bolum"><div class="kart-baslik"><span>Şu andan itibaren · kapanış {_fiyat(t["simdi"]["kapanis"])}</span></div>
+<div class="tablo-sar"><table><thead><tr><th>Ufuk</th><th class="sayi">Tahmini kapanış</th><th class="sayi">Beklenen</th><th class="sayi">%80 bant</th><th class="sayi">Bant</th></tr></thead><tbody>{"".join(yol)}</tbody></table></div>
+<p class="cok-kucuk">Beklenen değer küçük, bant genişse model “bilmiyorum” diyor demektir. 3, 5, 6, 7 mum ara değerle hesaplanır (modeller 1/2/4/8 mum için eğitilir).</p></div>
+<div class="kart bolum"><div class="kart-baslik"><span>Son 1 gün · tahmin ve gerçek (1 mum ileri)</span></div>
+<div class="tablo-sar"><table><thead><tr><th>Mum</th><th class="sayi">Kapanış</th><th class="sayi">Sonraki için tahmin</th><th class="sayi">Gerçek</th><th class="sayi">Yön · hata</th></tr></thead><tbody>{"".join(gec)}</tbody></table></div></div>
+</div></section>"""
+
+
+def tahmin_html(rapor: dict, yenile_sn: int | None = None) -> str:
+    import json as _json
+    coinler = rapor["coinler"]
+    sekmeler = "".join(
+        f'<button class="sekme" role="tab" data-hedef="{_e(s)}"><b>{_e(s.replace("USDT", ""))}</b>'
+        + (f'<span class="cok-kucuk mono">8 mum {_yuzde((c["tahmin"]["yol"][-1]["tahmin_yuzde"]))}</span>' if c.get("tahmin") else "") + '</button>'
+        for s, c in coinler.items())
+    veri = {s: {"mum": c.get("mum_dosyasi"), "tahmin": {"gecmis": c["tahmin"]["gecmis"], "yol": c["tahmin"]["yol"], "simdi": c["tahmin"]["simdi"]}}
+            for s, c in coinler.items() if c.get("tahmin")}
+    govde = f"""<main>
+<div class="kart bolum"><p class="kucuk" style="margin:0"><b>Mum tahmini:</b> her ufuk (1, 2, 4, 8 mum) için ayrı bir regresyon modeli, indikatörlerden o ufuktaki yüzde hareketi tahmin eder.
+İki şey gösterilir: <b>şu andan itibaren</b> 8 mumluk tahmin yolu ve hata bandı; <b>son 1 gün</b> için her mumda bir mum önceden yapılmış tahmin ile gerçek, yan yana.
+Son gün eğitime girmez; yani isabet ve hata, modelin görmediği veride ölçülür. <b>Dürüst uyarı:</b> kısa vadeli fiyat tahmini büyük ölçüde gürültüdür; yön isabeti %50 civarındaysa ve ortalama hata gerçek hareketten büyükse model işe yaramıyor demektir ve sayfa bunu saklamaz.</p></div>
+<div class="sekmeler" role="tablist">{sekmeler}</div>
+{"".join(_tahmin_coin(c) for c in coinler.values())}
+</main>
+{_mum_scriptleri(c.get("mum_dosyasi") for c in coinler.values())}<script>window.TH={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
+<script src="statik/lightweight-charts.standalone.production.js"></script>
+<script src="statik/tahmin.js?v={_SV}"></script>
+<footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
+    return _iskelet("Mum tahmini · Kripto Risk Terminali", "tahmin.html", govde, "", rapor["olusturma"], yenile_sn)

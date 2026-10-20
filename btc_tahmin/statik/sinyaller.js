@@ -11,7 +11,7 @@ function grafik(kok){
     timeScale:{timeVisible:true,secondsVisible:false,tickMarkFormatter:function(t){return saat(t)}},
     rightPriceScale:{borderColor:'rgba(255,255,255,.1)'},height:360,crosshair:{mode:0}});
   var s=ch.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',wickUpColor:'#22c55e',wickDownColor:'#ef4444',borderVisible:false});
-  s.setData(V.mumlar.map(function(m){return {time:m[0],open:m[1],high:m[2],low:m[3],close:m[4]}}));
+  s.setData((V.mumlar||(window.MUM&&window.MUM[V.mum])||[]).map(function(m){return {time:m[0],open:m[1],high:m[2],low:m[3],close:m[4]}}));
   var egilimKutu=kok.querySelector('.sz-egilim'),sonUfuk='kisa';
   function isaretle(ufuk){
     sonUfuk=ufuk;var M=[],eg=!egilimKutu||egilimKutu.checked;

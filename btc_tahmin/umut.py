@@ -13,6 +13,11 @@ from . import config, fable, performans
 from .data import _yeniden_ornekle
 from .features import veri_seti_hazirla
 
+
+def _mum_dosyasi(sembol, aralik, o):
+    from .pipeline import mum_dosyasi_yaz
+    return mum_dosyasi_yaz(sembol, aralik, o)
+
 ARALIKLAR = [("1h", "1 saat"), ("4h", "4 saat")]
 
 
@@ -30,13 +35,6 @@ def _ozet(o: pd.DataFrame, tarama: dict, aralik: str) -> dict:
                        "test_kf": en_iyi["donemler"]["test"]["kar_faktoru"]} if en_iyi else None}
 
 
-def _mumlar_js(o: pd.DataFrame) -> list:
-    z = ((o["time"] - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1)).to_numpy()
-    k = config.CIZELGE_MUM + 40
-    return [[int(t), float(a), float(b), float(c), float(d)] for t, a, b, c, d in
-            zip(z[-k:], o["open"].iloc[-k:], o["high"].iloc[-k:], o["low"].iloc[-k:], o["close"].iloc[-k:])]
-
-
 def calis(mumlar: dict, sembol: str, o15: pd.DataFrame, tarama15: dict) -> dict:
     """Her uzun zaman dilimi için tarama + sayfa verisi; 15m özeti karşılaştırma için eklenir."""
     sonuc = {"ozetler": [_ozet(o15, tarama15, "15m")], "dilimler": {}}
@@ -48,7 +46,7 @@ def calis(mumlar: dict, sembol: str, o15: pd.DataFrame, tarama15: dict) -> dict:
         sayfa = fable.tarama_sayfa_verisi(o, t, rejim)
         trend_pay = float(rejim[int(len(o) * 0.8):].mean()) if len(o) else 0.0
         sonuc["dilimler"][aralik] = {"ad": ad, "tarama": {k: v for k, v in t.items() if k != "secilen"},
-                                     "secilen_sayisi": len(t["secilen"]), "sayfa": sayfa, "mumlar": _mumlar_js(o),
+                                     "secilen_sayisi": len(t["secilen"]), "sayfa": sayfa, "mum_dosyasi": _mum_dosyasi(sembol, aralik, o),
                                      "rejim_simdi": "trend" if len(rejim) and rejim[-1] else "yatay",
                                      "test_trend_payi": round(trend_pay, 3), "veri_gun": int((o["time"].iloc[-1] - o["time"].iloc[0]).days)}
         sonuc["ozetler"].append(_ozet(o, t, aralik))

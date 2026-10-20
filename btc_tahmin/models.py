@@ -107,10 +107,15 @@ def _teshis(p, y, gun, min_n) -> dict:
     return {"en_iyi_isabet": round(en_iyi, 4), "kapsama_yuzde": kapsama, "esik": config.MIN_TUTARLILIK}
 
 
-def yon_modelleri(o: pd.DataFrame, hedef: pd.DataFrame, hedef_adi: str = "gun_sonu_yukari") -> list[dict]:
-    """Her model ve her tutarlılık seviyesi için (eşik, test isabeti, şu anki risk) üretir."""
-    if not SKLEARN:
-        return []
+MODEL_SURUM = 1
+
+
+def _model_dosyasi(anahtar: str, hedef_adi: str):
+    return config.CIKTI_DIR / f"model_{anahtar}_{hedef_adi}.pkl"
+
+
+def _egit(o: pd.DataFrame, hedef: pd.DataFrame, hedef_adi: str) -> dict:
+    """Pahalı kısım: walk-forward + eşik seçimi + tam model eğitimi. Sonuç günde bir hesaplanıp saklanır."""
     X_df = ozellik_matrisi(o)
     y_s = hedef[hedef_adi]
     gecerli = y_s.notna().to_numpy()
@@ -119,30 +124,17 @@ def yon_modelleri(o: pd.DataFrame, hedef: pd.DataFrame, hedef_adi: str = "gun_so
     yerel = o["time"] + pd.Timedelta(hours=config.GUN_SONU_UTC_OFFSET_SAAT)
     gun = yerel.dt.floor("D").to_numpy()[gecerli] if hedef_adi.startswith("gun") else None
     min_n = config.MIN_DESTEK_TEST * 3 if gun is None else 30   # gün sonu: 30 farklı gün
-
-    satirlar = []
+    modeller = {}
     for ad, (fn, doldur) in _modeller().items():
         p, sinirlar = _yuru_ileri(fn, doldur, X, y)
         sec = slice(sinirlar[0], sinirlar[-2])      # eşik seçimi: ilk 4 kat
         tst = slice(sinirlar[-2], sinirlar[-1])     # tutarlılık ölçümü: son kat (hiç dokunulmamış)
         genel_dogruluk = float(((p[tst] > 0.5).astype(int) == y[tst]).mean())
-
         # Son CIZELGE_MUM+1 mum eğitime girmez: geriye dönük kontrolde model, sonucunu bildiği mumu tahmin etmesin
         kes = max(sinirlar[0], len(y) - config.CIZELGE_MUM - 1)
         tam = fn()
         tam.fit(np.nan_to_num(X[:kes]) if doldur else X[:kes], y[:kes])
-        x_son = X_df.to_numpy()[-1:]
-        p_simdi = float(tam.predict_proba(np.nan_to_num(x_son) if doldur else x_son)[0, 1])
-        # Geriye dönük kontrol için son mumlardaki tahminler (en eskiden en yeniye)
-        x_gecmis = X_df.to_numpy()[-config.CIZELGE_MUM - 1:]
-        p_gecmis = tam.predict_proba(np.nan_to_num(x_gecmis) if doldur else x_gecmis)[:, 1].round(4).tolist()
-
-        satirlar.append({  # eşiksiz ham tahmin: her zaman üretilir, tutarlılığı düşük olabilir
-            "tur": "HAM", "model": f"{ad} ({hedef_adi})", "hedef": hedef_adi,
-            "p_yukari_simdi": round(p_simdi, 4), "long_risk_yuzde": round(100 * (1 - p_simdi), 1),
-            "modelin_genel_dogrulugu": round(genel_dogruluk, 4), "p_gecmis": p_gecmis,
-            "teshis": _teshis(p[sec], y[sec], None if gun is None else gun[sec], min_n),
-        })
+        seviyeler = []
         for hedef_oran in config.TUTARLILIK_SEVIYELERI:
             d = _esik_bul(p[sec], y[sec], None if gun is None else gun[sec], hedef_oran, min_n)
             if d is None:
@@ -155,17 +147,70 @@ def yon_modelleri(o: pd.DataFrame, hedef: pd.DataFrame, hedef_adi: str = "gun_so
             isabet = float(((pt[idx] > 0.5).astype(int) == yt[idx]).mean())
             if isabet < config.MIN_TUTARLILIK:
                 continue
+            seviyeler.append({"hedeflenen_seviye": hedef_oran, "tutarlilik": round(isabet, 4), "test_n": n,
+                              "kapsama_yuzde": round(100 * n / (len(np.unique(gun[tst])) if gun is not None else tst.stop - tst.start), 2),
+                              "guven_marji": d})
+        modeller[ad] = {"tam": tam, "doldur": doldur, "genel_dogruluk": round(genel_dogruluk, 4),
+                        "teshis": _teshis(p[sec], y[sec], None if gun is None else gun[sec], min_n), "seviyeler": seviyeler}
+    return {"surum": MODEL_SURUM, "zaman": pd.Timestamp.now(tz="UTC").isoformat(), "hedef": hedef_adi,
+            "kolonlar": list(X_df.columns), "modeller": modeller}
+
+
+def _satirlar(egitim: dict, o: pd.DataFrame) -> list[dict]:
+    """Ucuz kısım: saklanan modellerle son mumların tahmini; her turda çalışır."""
+    hedef_adi = egitim["hedef"]
+    X_df = ozellik_matrisi(o).reindex(columns=egitim["kolonlar"])
+    x_gecmis = X_df.to_numpy()[-config.CIZELGE_MUM - 1:]
+    satirlar = []
+    for ad, m in egitim["modeller"].items():
+        xg = np.nan_to_num(x_gecmis) if m["doldur"] else x_gecmis
+        p_gecmis = m["tam"].predict_proba(xg)[:, 1].round(4).tolist()
+        p_simdi = float(p_gecmis[-1])
+        satirlar.append({  # eşiksiz ham tahmin: her zaman üretilir, tutarlılığı düşük olabilir
+            "tur": "HAM", "model": f"{ad} ({hedef_adi})", "hedef": hedef_adi,
+            "p_yukari_simdi": round(p_simdi, 4), "long_risk_yuzde": round(100 * (1 - p_simdi), 1),
+            "modelin_genel_dogrulugu": m["genel_dogruluk"], "p_gecmis": p_gecmis, "teshis": m["teshis"],
+            "egitim_zamani": egitim["zaman"],
+        })
+        for sv in m["seviyeler"]:
             satirlar.append({
-                "tur": "YON", "model": f"{ad} ({hedef_adi})", "hedef": hedef_adi,
-                "hedeflenen_seviye": hedef_oran, "tutarlilik": round(isabet, 4),
-                "test_n": n, "kapsama_yuzde": round(100 * n / (len(np.unique(gun[tst])) if gun is not None else tst.stop - tst.start), 2),
-                "guven_marji": d, "p_yukari_simdi": round(p_simdi, 4),
-                "sinyal_var": bool(abs(p_simdi - 0.5) >= d),
-                "long_risk_yuzde": round(100 * (1 - p_simdi), 1),
-                "short_risk_yuzde": round(100 * p_simdi, 1),
-                "modelin_genel_dogrulugu": round(genel_dogruluk, 4),
+                "tur": "YON", "model": f"{ad} ({hedef_adi})", "hedef": hedef_adi, **sv,
+                "p_yukari_simdi": round(p_simdi, 4), "sinyal_var": bool(abs(p_simdi - 0.5) >= sv["guven_marji"]),
+                "long_risk_yuzde": round(100 * (1 - p_simdi), 1), "short_risk_yuzde": round(100 * p_simdi, 1),
+                "modelin_genel_dogrulugu": m["genel_dogruluk"],
             })
     return satirlar
+
+
+def yon_modelleri(o: pd.DataFrame, hedef: pd.DataFrame, hedef_adi: str = "gun_sonu_yukari",
+                  anahtar: str | None = None, hizli: bool = False) -> list[dict]:
+    """Her model ve her tutarlılık seviyesi için (eşik, test isabeti, şu anki risk) üretir.
+
+    anahtar verilirse (ör. "BTCUSDT_15m") eğitim günde bir yapılır ve cikti/model_*.pkl dosyasında saklanır;
+    hizli=True ve dosya 24 saatten yeniyse yalnızca tahmin yapılır (tur süresi dakikalardan saniyelere iner)."""
+    if not SKLEARN:
+        return []
+    egitim = None
+    dosya = _model_dosyasi(anahtar, hedef_adi) if anahtar else None
+    if dosya and hizli and dosya.exists():
+        try:
+            import pickle
+            with open(dosya, "rb") as f:
+                aday = pickle.load(f)
+            yas = pd.Timestamp.now(tz="UTC") - pd.Timestamp(aday["zaman"])
+            if aday.get("surum") == MODEL_SURUM and yas.total_seconds() < 24 * 3600 and aday.get("min_tutarlilik") == config.MIN_TUTARLILIK:
+                egitim = aday
+        except Exception:  # noqa: BLE001  bozuk dosya: yeniden eğit
+            egitim = None
+    if egitim is None:
+        egitim = _egit(o, hedef, hedef_adi)
+        egitim["min_tutarlilik"] = config.MIN_TUTARLILIK
+        if dosya:
+            import pickle
+            config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
+            with open(dosya, "wb") as f:
+                pickle.dump(egitim, f)
+    return _satirlar(egitim, o)
 
 
 def _gun_ici_sinirlar(o: pd.DataFrame, seri: pd.Series, yukari: bool) -> list[tuple[float, float, int, float]]:

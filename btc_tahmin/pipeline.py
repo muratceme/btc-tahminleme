@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import bildirim, config, fable, gunluk, market, miner, models, performans, sinyal
+from . import bildirim, config, fable, gunluk, market, miner, models, performans, sinyal, tahmin
 from .features import gun_sonuna_kalan_saat, ince_kosullar, veri_seti_hazirla
 
 
@@ -220,6 +220,20 @@ def veri_boslugu(m: pd.DataFrame, aralik: str) -> dict:
             "son_bosluk": m["time"].iloc[1:].loc[bosluk.index[-1]].isoformat() if len(bosluk) else None}
 
 
+def mum_dosyasi_yaz(sembol: str, aralik: str, o: pd.DataFrame, adet: int = config.CIZELGE_MUM + 40) -> str:
+    """Sayfaların grafikleri için son mumları küçük bir JS dosyasına yazar (rapor.json şişmesin): cikti/veri/mum_<sembol>_<aralik>.js"""
+    zaman = ((o["time"] - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1)).to_numpy()
+    k = adet
+    mumlar = [[int(t), float(f"{a:.6g}"), float(f"{b:.6g}"), float(f"{c_:.6g}"), float(f"{d:.6g}")] for t, a, b, c_, d in
+              zip(zaman[-k:], o["open"].iloc[-k:], o["high"].iloc[-k:], o["low"].iloc[-k:], o["close"].iloc[-k:])]
+    hedef_dir = config.CIKTI_DIR / "veri"
+    hedef_dir.mkdir(parents=True, exist_ok=True)
+    anahtar = f"{sembol}_{aralik}"
+    (hedef_dir / f"mum_{anahtar}.js").write_text(
+        f"window.MUM=window.MUM||{{}};window.MUM[{json.dumps(anahtar)}]={json.dumps(mumlar, separators=(',', ':'))};", encoding="utf-8")
+    return anahtar
+
+
 def sahte_kesif_oku(sembol: str, aralik: str) -> dict | None:
     """'python -m btc_tahmin sahte' çıktısı varsa okur (kaç kuralın şans eseri olabileceği)."""
     f = config.CIKTI_DIR / f"sahte_{sembol}_{aralik}.json"
@@ -243,7 +257,9 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
                 r["aktif_su_an"] = False
     grafik_verisi_yaz(sembol, aralik, o, KT, hedef, kurallar)
     simulasyon = {ad: performans.kasa_simulasyonu(kurallar[ad], o, KT, hedef) for ad in ("derin", "sonraki_mum")}
-    yon = models.yon_modelleri(o, hedef, "gun_sonu_yukari") + models.yon_modelleri(o, hedef, "sonraki_yesil")
+    anahtar = f"{sembol}_{aralik}"
+    yon = (models.yon_modelleri(o, hedef, "gun_sonu_yukari", anahtar, hizli)
+           + models.yon_modelleri(o, hedef, "sonraki_yesil", anahtar, hizli))
     dusus = models.dusus_riski(o, hedef)
     tablo = risk_tablosu(yon, kurallar["gun_sonu"], dusus, kirim)
     tablo["ozet"]["max_yukselis"] = models.yukselis_siniri(o, hedef)
@@ -280,10 +296,8 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "cizelge": sinyal.zaman_cizelgesi(o, KT, kurallar, yon, aralik),
         "fable": fable.hesapla(o),
         "tarama": (lambda t: {**t, "sayfa": fable.tarama_sayfa_verisi(o, t, fable.rejim_serisi(o))})(fable.tarama(o)),
-        "cizelge_mumlar": [[int((t - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1)), float(a), float(b), float(c_), float(d)]
-                           for t, a, b, c_, d in zip(o["time"].iloc[-config.CIZELGE_MUM - 40:], o["open"].iloc[-config.CIZELGE_MUM - 40:],
-                                                     o["high"].iloc[-config.CIZELGE_MUM - 40:], o["low"].iloc[-config.CIZELGE_MUM - 40:],
-                                                     o["close"].iloc[-config.CIZELGE_MUM - 40:])],
+        "mum_dosyasi": mum_dosyasi_yaz(sembol, aralik, o),
+        "tahmin": tahmin.hesapla(o, anahtar, hizli),
         "aktif_tum": [{k: r[k] for k in ("id", "hedef", "yon", "tutarlilik", "kosullar")}
                       for liste in kurallar.values() for r in liste if r["aktif_su_an"]],
         "kural_sayisi": {k: len(v) for k, v in kurallar.items()},
