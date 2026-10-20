@@ -59,5 +59,5 @@ Kurallar:
 ## Sürekli izleme
 
 Kullanıcı sürekli takip isterse iki seçenek öner:
-- Terminalde: `python -m btc_tahmin canli --ac` (her mum kapanışında yeniler, pano http://localhost:8000 adresinde; aynı Wi-Fi'daki telefondan terminalde yazan IP adresiyle açılır).
+- Terminalde: `python -m btc_tahmin canli --ac` (her mum kapanışında yeniler, pano http://localhost:5055 adresinde; aynı Wi-Fi'daki telefondan terminalde yazan IP adresiyle açılır).
 - Claude Code içinde: `/loop 15m /btc-rapor hizli`.

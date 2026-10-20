@@ -1,6 +1,6 @@
-"""Yerel web sunucusu: panoyu http://localhost:8000 adresinde yayınlar.
+"""Yerel web sunucusu: panoyu http://localhost:5055 adresinde yayınlar (port doluysa sonraki boş port).
 
-Aynı Wi-Fi'daki telefon da http://<bilgisayar-ip>:8000 adresinden açabilir.
+Aynı Wi-Fi'daki telefon da http://<bilgisayar-ip>:5055 adresinden açabilir.
 """
 from __future__ import annotations
 
@@ -129,14 +129,14 @@ def _eskiyi_kapat(port: int) -> bool:
         return False
 
 
-PORT: int = 8000      # gerçekten kullanılan port (istenen doluysa bir sonraki boş port)
+PORT: int = config.VARSAYILAN_PORT      # gerçekten kullanılan port (istenen doluysa bir sonraki boş port)
 
 
 def _dene(port: int):
     return _Sunucu(("0.0.0.0", port), partial(_Isleyici, directory=str(config.CIKTI_DIR)))
 
 
-def baslat(port: int = 8000, deneme: int = 20) -> ThreadingHTTPServer:
+def baslat(port: int = config.VARSAYILAN_PORT, deneme: int = 40) -> ThreadingHTTPServer:
     """Sunucuyu başlatır. Port doluysa: önce eski kopyamızsa onu kapatıp yerine geçer; başka bir program
     kullanıyorsa bir sonraki boş portu (8001, 8002, ...) seçer. Kullanılan port sunucu.PORT'ta ve kilit dosyasında."""
     global PORT

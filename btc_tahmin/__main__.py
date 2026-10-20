@@ -3,7 +3,7 @@
     python -m btc_tahmin rapor --aralik 10m
     python -m btc_tahmin rapor --hizli    # 24 saatten yeni kural önbelleğini kullan (madenciliği atla)
     python -m btc_tahmin izle --dakika 15 # her N dakikada bir raporu yenile
-    python -m btc_tahmin canli            # izle + http://localhost:8000 (telefondan da açılır)
+    python -m btc_tahmin canli            # izle + http://localhost:5055 (telefondan da açılır)
     python -m btc_tahmin canli --tam      # kuralları şimdi yeniden ara (normalde 24 saatlik önbellek kullanılır)
     python -m btc_tahmin ozet             # son raporu (rapor.json) terminalde tekrar göster
     python -m btc_tahmin kontrol          # her metrik geldi mi? (son rapora göre)
@@ -53,7 +53,7 @@ def main(argv=None):
             a.add_argument("--tam", action="store_true",
                            help="kuralları şimdi yeniden ara (varsayılan: 24 saatten yeni kural önbelleği varsa kullan)")
         if ad == "canli":
-            a.add_argument("--port", type=int, default=8000)
+            a.add_argument("--port", type=int, default=config.VARSAYILAN_PORT)
             a.add_argument("--sifre", help="panoyu şifrele (kullanıcı adı: kripto)")
             a.add_argument("--tunel", action="store_true",
                            help="cloudflared ile her yerden erişilebilen https adresi aç (şifre otomatik konur)")

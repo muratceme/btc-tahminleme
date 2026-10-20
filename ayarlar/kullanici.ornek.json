@@ -1,5 +1,6 @@
 {
   "_aciklama": "Bu dosyayı 'kullanici.json' adıyla kopyalayıp kendi değerlerini yaz. kullanici.json git'e gönderilmez (Telegram anahtarın gizli kalır).",
+  "port": 5055,
   "islem_turu": "vadeli",
   "min_tutarlilik": 0.70,
   "egilim_marji": 0.05,

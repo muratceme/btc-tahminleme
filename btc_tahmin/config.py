@@ -20,6 +20,9 @@ VERI_DIR = KOK / "veri"          # indirilen mumlar ve önbellek
 CIKTI_DIR = KOK / "cikti"        # rapor.html, rapor.json, kurallar.csv
 AYAR_DIR = KOK / "ayarlar"       # olaylar.json (puan kırımları, takvim)
 
+# Panonun yayınlandığı port (dolu ise sonraki boş port seçilir; ayarlar/kullanici.json 'port' ile değişir)
+VARSAYILAN_PORT = 5055
+
 # İşlem çiftleri (Binance spot). Ana varlık ilk sıradadır.
 SEMBOLLER = ["BTCUSDT", "ETHUSDT", "XRPUSDT"]
 ANA_SEMBOL = "BTCUSDT"
@@ -106,6 +109,7 @@ def _kullanici() -> dict:
 KULLANICI = _kullanici()
 # İstersen ayarlar/kullanici.json'a "semboller": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT", "BNBUSDT"] yazarak coin ekle
 SEMBOLLER = [x.upper() for x in KULLANICI.get("semboller", SEMBOLLER)]
+VARSAYILAN_PORT = int(KULLANICI.get("port", VARSAYILAN_PORT))
 
 # Gösterme eşiği: bunun altında tutarlılıkta hiçbir kural/model sinyal vermez. 15m mumda tek mum yönü zor tahmin
 # edildiği için %70 çoğu zaman "sinyal yok" demektir; 0.60-0.65 daha sık ama daha zayıf sinyal verir. Wilson ağırlığı
