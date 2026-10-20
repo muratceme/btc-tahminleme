@@ -14,6 +14,9 @@ document.documentElement.classList.add('js');
     if(ts&&yas){var dk=Math.max(0,Math.round((n-ts)/60000));yas.textContent=dk<1?'az önce':dk+' dk önce';
       if(nokta){nokta.classList.toggle('eski',dk>30);nokta.lastChild.textContent=dk>30?' ESKİ VERİ':' CANLI'}}}
   tik();setInterval(tik,1000);
+  // Rakam tuşları (klavye ya da TV kumandası): menüdeki sayfaya git. Yazı alanında değilken.
+  document.addEventListener('keydown',function(e){var t=e.target&&e.target.tagName;if(t==='INPUT'||t==='TEXTAREA'||e.ctrlKey||e.altKey||e.metaKey)return;
+    if(/^[0-9]$/.test(e.key)){var a=document.querySelector('nav.menu a[data-tus="'+e.key+'"]');if(a){e.preventDefault();location.href=a.getAttribute('href')}}});
   var y=parseInt(document.body.dataset.yenile||'0',10);
   if(y>0){try{var sy=sessionStorage.getItem('kr_scroll');if(sy){window.scrollTo(0,+sy);sessionStorage.removeItem('kr_scroll')}}catch(e){}
     setTimeout(function(){try{sessionStorage.setItem('kr_scroll',window.scrollY)}catch(e){}location.reload()},y*1000)}

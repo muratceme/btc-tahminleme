@@ -608,11 +608,15 @@ def _makro_karti(b: dict) -> str:
 
 
 # ------------------------------------------------------------------ ortak iskelet
+# Menü sırası = rakam tuşu (1-8); 0 = TV modu. Klavyeden ya da TV kumandasından rakamla sayfa değişir.
+SAYFALAR = [("rapor.html", "Pano"), ("simdi.html", "⚡ Şimdi gir"), ("sinyaller.html", "Sinyaller · 24 saat"), ("fable.html", "Fable sinyalleri"),
+            ("tarama.html", "Strateji tarama"), ("umut.html", "Uzun vade"), ("tahmin.html", "Mum tahmini"), ("nasil-calisir.html", "Nasıl çalışır?")]
+
+
 def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str = "", yenile: int | None = None) -> str:
-    menu = "".join(f'<a href="{u}" class="{"aktif" if aktif_sayfa == u else ""}">{a}</a>'
-                   for u, a in (("rapor.html", "Pano"), ("simdi.html", "⚡ Şimdi gir"), ("sinyaller.html", "Sinyaller · 24 saat"), ("fable.html", "Fable sinyalleri"),
-                                ("tarama.html", "Strateji tarama"), ("umut.html", "Uzun vade"), ("tahmin.html", "Mum tahmini"),
-                                ("nasil-calisir.html", "Nasıl çalışır?")))
+    menu = "".join(f'<a href="{u}" class="{"aktif" if aktif_sayfa == u else ""}" data-tus="{i}"><span class="tus">{i}</span>{a}</a>'
+                   for i, (u, a) in enumerate(SAYFALAR, 1))
+    menu += '<a href="tv.html" title="TV modu: sayfaları sırayla tam ekran döndürür" data-tus="0"><span class="tus">0</span>📺 TV</a>'
     canli = ('<span class="nokta" id="nokta"><i></i> CANLI</span><span>Güncelleme: <b id="yas" class="mono">—</b></span>'
              if ts else "") + '<span id="saat" class="mono"></span>'
     return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8">
@@ -1724,3 +1728,29 @@ Son gün eğitime girmez; yani isabet ve hata, modelin görmediği veride ölç�
 <script src="statik/tahmin.js?v={_SV}"></script>
 <footer>{_e(rapor['uyari'])} · Grafik: TradingView Lightweight Charts™ (Apache 2.0).</footer>"""
     return _iskelet("Mum tahmini · Kripto Risk Terminali", "tahmin.html", govde, "", rapor["olusturma"], yenile_sn)
+
+
+# ------------------------------------------------------------------ TV modu
+def tv_html(rapor: dict) -> str:
+    """Televizyon / büyük ekran: sayfaları sırayla tam ekran döndürür; kumandanın rakam tuşuyla sayfaya atlanır."""
+    import json as _json
+    sayfalar = [{"u": u, "a": a} for u, a in SAYFALAR]
+    return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TV modu · Kripto Risk Terminali</title><link rel="stylesheet" href="statik/pano.css?v={_SV}">
+<style>html,body{{height:100%;margin:0;overflow:hidden;background:#05070b}}
+#cerceve{{position:fixed;inset:0;border:0;width:100%;height:100%;background:#05070b}}
+#serit{{position:fixed;left:0;right:0;bottom:0;display:flex;gap:6px;align-items:center;padding:8px 14px;background:rgba(5,7,11,.92);border-top:1px solid var(--cizgi);
+font:600 15px var(--sans);color:var(--soluk);z-index:9;transition:opacity .4s}}#serit.gizli{{opacity:0}}
+#serit a{{color:var(--soluk);padding:6px 10px;border-radius:8px;text-decoration:none;white-space:nowrap;display:inline-flex;gap:6px;align-items:center}}
+#serit a.aktif{{color:#000;background:var(--altin)}}#serit .tus{{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.12);font:800 12px var(--mono)}}
+#serit a.aktif .tus{{background:rgba(0,0,0,.25)}}#sayac{{margin-left:auto;font:600 13px var(--mono)}}#ilerleme{{position:fixed;left:0;bottom:0;height:3px;background:var(--altin);width:0;z-index:10}}
+#ipucu{{position:fixed;top:10px;right:14px;font:12px var(--mono);color:var(--soluk2);background:rgba(5,7,11,.7);padding:4px 8px;border-radius:6px;z-index:9}}</style></head>
+<body>
+<iframe id="cerceve" src="rapor.html" title="sayfa"></iframe>
+<div id="ilerleme"></div>
+<div id="serit">{"".join(f'<a href="#" data-i="{i}"><span class="tus">{i + 1}</span>{_e(a)}</a>' for i, (u, a) in enumerate(SAYFALAR))}
+<a href="#" id="dur" title="Boşluk: durdur / sürdür">⏸</a><span id="sayac"></span></div>
+<div id="ipucu">rakam: sayfa · ◀ ▶: önceki/sonraki · boşluk: durdur · F: tam ekran · +/−: yakınlaştır</div>
+<script>window.TV={_json.dumps(sayfalar, ensure_ascii=False)};</script>
+<script src="statik/tv.js?v={_SV}"></script>
+</body></html>"""

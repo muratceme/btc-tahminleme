@@ -43,6 +43,11 @@ Python 3.10 veya daha yenisi gerekir. API anahtarı gerekmez; tüm kaynaklar her
 
 Kısa yollar: Windows'ta `calistir.bat`, macOS/Linux'ta `./calistir.sh`. İkisi de `canli` modunu başlatır.
 
+**Televizyonda bakmak (TV modu):** TV'nin tarayıcısına `http://<bilgisayar-ip>:5055/tv.html` yaz (menüde 📺 TV). Sayfalar
+45 saniyede bir sırayla döner; kumandanın rakam tuşları sayfaya atlar (1 Pano, 2 Şimdi gir, 3 Sinyaller …), ◀ ▶ önceki/sonraki,
+OK/boşluk durdurur, F tam ekran, +/− yakınlaştırır. `tv.html?sn=30&zoom=1.4` ile süre ve büyütme değişir. Menüdeki
+numaralar her sayfada klavyeden de çalışır.
+
 **Telefondan bakmak:** Telefon ile bilgisayar aynı Wi-Fi'da olmalı. Terminalde yazan `TELEFONDAN` adresini telefonun
 tarayıcısına yaz. Windows "erişime izin ver" diye sorarsa **Özel ağlar** kutusunu işaretleyip izin ver.
 Bilgisayar açık ve pencere açık olduğu sürece pano güncel kalır.
