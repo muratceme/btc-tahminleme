@@ -610,7 +610,7 @@ def _makro_karti(b: dict) -> str:
 # ------------------------------------------------------------------ ortak iskelet
 def _iskelet(baslik: str, aktif_sayfa: str, govde: str, serit: str = "", ts: str = "", yenile: int | None = None) -> str:
     menu = "".join(f'<a href="{u}" class="{"aktif" if aktif_sayfa == u else ""}">{a}</a>'
-                   for u, a in (("rapor.html", "Pano"), ("simdi.html", "⚡ Şimdi gir"), ("son-saat.html", "Son 1 saat"), ("sinyaller.html", "Sinyaller · 24 saat"), ("fable.html", "Fable sinyalleri"),
+                   for u, a in (("rapor.html", "Pano"), ("simdi.html", "⚡ Şimdi gir"), ("sinyaller.html", "Sinyaller · 24 saat"), ("fable.html", "Fable sinyalleri"),
                                 ("tarama.html", "Strateji tarama"), ("umut.html", "Uzun vade"), ("tahmin.html", "Mum tahmini"),
                                 ("nasil-calisir.html", "Nasıl çalışır?")))
     canli = ('<span class="nokta" id="nokta"><i></i> CANLI</span><span>Güncelleme: <b id="yas" class="mono">—</b></span>'
@@ -1583,14 +1583,24 @@ def simdi_html(rapor: dict, yenile_sn: int | None = None) -> str:
         eg_html = ('<div class="kart bolum"><div class="kart-baslik"><span>Eğilimler · sinyal değil, düşük güven</span></div><ul class="liste kucuk">'
                    + "".join(f'<li><span><b>{_e(e["sembol"].replace("USDT", ""))}</b> · {_e(e["ad"])}: {_egilim_rozeti(e)} <a href="{_e(e["link"])}">→</a></span></li>' for e in eg)
                    + '</ul></div>')
+    son_saat_govde = _son_saat_bolumu(rapor)
     govde = f"""<main>
 <div class="kart bolum"><p class="kucuk" style="margin:0"><b>Şimdi gir:</b> tüm sayfalardaki kaynakların <b>son mumdaki</b> sinyalleri tek yerde: yön oylaması, aktif kurallar, Fable stratejileri,
 strateji tarama ve uzun vade (1 saat / 4 saat). Her satırda çıkış mumu ve saati, grafik türü ve geçmiş performans var; “Geçmişini gör” o kaynağın sayfasını doğru coin ve stratejide açar.
 Sayfa adı şaka değil ama tavsiye de değil: burada “sinyal var” demek, “git gir” demek değildir.<br><span class="cok-kucuk">{son}</span></p></div>
-{durum}{acik_html}{bas_html}{eg_html}
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+<button class="ufuk-dugme simdi-sekme" data-bolum="son-mum" aria-pressed="true">⚡ Son mum · {len(sin)} sinyal</button>
+<button class="ufuk-dugme simdi-sekme" data-bolum="son-saat" aria-pressed="false">Son {config.SON_SAAT:g} saat</button>
+<span style="flex:1"></span>
+<button class="ufuk-dugme" id="bildirim-ac" title="Bu sayfa açıkken yeni sinyal gelince tarayıcı bildirimi ve kısa bir ses">🔔 Bildirimleri aç</button>
+<label class="cok-kucuk" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" id="ses-ac" checked> ses</label></div>
+<div class="simdi-bolum" data-bolum="son-mum">{durum}{acik_html}{bas_html}{eg_html}</div>
+<div class="simdi-bolum" data-bolum="son-saat" hidden>{son_saat_govde}</div>
 </main>
+<script src="statik/simdi.js?v={_SV}"></script>
 <footer>{_e(rapor['uyari'])}</footer>"""
-    return _iskelet("Şimdi gir · Kripto Risk Terminali", "simdi.html", govde, "", rapor["olusturma"], yenile_sn)
+    return _iskelet("Şimdi gir · Kripto Risk Terminali", "simdi.html", govde, "", rapor["olusturma"], yenile_sn).replace(
+        '<body ', f'<body data-sinyal="{len(sin)}" data-acik="{len(acik)}" ', 1)
 
 
 # ------------------------------------------------------------------ Son 1 saat (son saatte sinyale dönenler)
@@ -1613,7 +1623,7 @@ def _son_saat_satir(r: dict) -> str:
             f'<td><a class="ufuk-dugme" style="display:inline-block;text-decoration:none" href="{_e(r["link"])}">Geçmişini gör →</a></td></tr>')
 
 
-def son_saat_html(rapor: dict, yenile_sn: int | None = None) -> str:
+def _son_saat_bolumu(rapor: dict) -> str:
     from .anlik import son_saat
     a = son_saat(rapor)
     sat = a["satirlar"]
@@ -1628,14 +1638,15 @@ def son_saat_html(rapor: dict, yenile_sn: int | None = None) -> str:
     else:
         govde_ic = (f'<div class="kart bolum"><div class="kart-baslik"><span>● Son {saat_metni}te hiçbir kaynak sinyale dönmedi</span></div>'
                     '<p class="kucuk">Normaldir. Sayfa her güncellemede yenilenir; anlık durum için <a href="simdi.html">⚡ Şimdi gir</a>.</p></div>')
-    govde = f"""<main>
-<div class="kart bolum"><p class="kucuk" style="margin:0"><b>Son {saat_metni}:</b> Şimdi gir sayfasıyla aynı mantık, ama yalnızca son mum değil: son {saat_metni} içinde <b>sinyale dönmüş</b> her kaynak
-(yön oylaması, aktif kurallar, Fable / tarama / uzun vade stratejileri) giriş saati, çıkış saati ve şu anki durumuyla. “Geçmişini gör” o kaynağın sayfasını doğru coin ve stratejide açar.
-<span class="cok-kucuk">Pencere: {_tsi(a["sinir"])} – {_tsi(a["zaman"])} TSİ. Değiştirmek için config.py içinde SON_SAAT.</span></p></div>
-{govde_ic}
-</main>
-<footer>{_e(rapor['uyari'])}</footer>"""
-    return _iskelet("Son 1 saat · Kripto Risk Terminali", "son-saat.html", govde, "", rapor["olusturma"], yenile_sn)
+    return (f'<div class="kart bolum"><p class="kucuk" style="margin:0"><b>Son {saat_metni}:</b> yalnızca son mum değil, son {saat_metni} içinde <b>sinyale dönmüş</b> her kaynak '
+            f'giriş saati, çıkış saati ve şu anki durumuyla. <span class="cok-kucuk">Pencere: {_tsi(a["sinir"])} – {_tsi(a["zaman"])} TSİ. Değiştirmek için config.py içinde SON_SAAT.</span></p></div>'
+            + govde_ic)
+
+
+def son_saat_html(rapor: dict, yenile_sn: int | None = None) -> str:
+    """Eski bağlantılar için: Şimdi gir sayfasının 'Son 1 saat' sekmesine yönlendirir."""
+    return ('<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=simdi.html#son-saat">'
+            '<title>Yönlendiriliyor</title></head><body><a href="simdi.html#son-saat">Son 1 saat artık Şimdi gir sayfasında</a></body></html>')
 
 
 # ------------------------------------------------------------------ mum tahmini

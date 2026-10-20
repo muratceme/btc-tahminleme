@@ -30,13 +30,13 @@ Python 3.10 veya daha yenisi gerekir. API anahtarı gerekmez; tüm kaynaklar her
 | `python -m btc_tahmin rapor --aralik 10m` | 10 dakikalık mumlarla (5m'den üretilir) |
 | `python -m btc_tahmin rapor --hizli` | Son 24 saatte bulunan kuralları yeniden kullanır (~1 dk) |
 | `python -m btc_tahmin rapor --coin BTC` | Sadece seçilen coin(ler) |
-| `python -m btc_tahmin canli --ac` | **Önerilen.** Her 15m mumda yeniler, 24 saatten yeni kural önbelleği varsa onu kullanır (yeniden açılış 1-2 dk; `--tam` ile kuralları şimdi yeniden aratırsın), panoyu **http://localhost:8000** adresinde yayınlar. Aynı Wi-Fi'daki telefondan terminalde yazan `http://192.168.x.x:8000` adresiyle açılır |
+| `python -m btc_tahmin canli --ac` | **Önerilen.** Her 15m mumda yeniler; kurallar ve yapay zekâ modelleri günde bir eğitilir, aradaki turlar ~20-30 sn (`--tam` ile hepsini şimdi yeniden aratırsın), panoyu **http://localhost:8000** adresinde yayınlar. Aynı Wi-Fi'daki telefondan terminalde yazan `http://192.168.x.x:8000` adresiyle açılır |
 | `python -m btc_tahmin izle --dakika 15 --ac` | Her 15m mum kapanışında otomatik yeniler, pano dakikada bir tazelenir |
 | `python -m btc_tahmin ozet` | Son raporu terminalde tekrar gösterir |
 | `python -m btc_tahmin canli --tunel` | Evden dışarıdan (mobil veriyle) erişim: Cloudflare tüneliyle `https://….trycloudflare.com` adresi açar, panoyu otomatik şifreler. Bir kez `winget install --id Cloudflare.cloudflared` gerekir |
 | `python -m btc_tahmin telegram` | Telefona bildirim kurulumu (adım adım). Sonra güçlü sinyaller Telegram'a mesaj olarak gelir |
 | `python -m btc_tahmin karne` | **Canlı karne:** sistemin gerçek sinyallerinin isabeti ve komisyon sonrası net sonucu |
-| `python -m btc_tahmin sahte --tekrar 5` | **Sahte keşif testi:** bulunan kuralların kaçı şans eseri olabilir? Hedefleri tam gün kaydırıp madenciliği 5 kez tekrarlar (coin başına ~5-15 dk). Sonuç panoda ve Veri durumu panelinde görünür |
+| `python -m btc_tahmin sahte --tekrar 5` | **Sahte keşif testi:** bulunan kuralların kaçı şans eseri olabilir? Hedefleri tam gün kaydırıp madenciliği 5 kez tekrarlar (coin başına ~5-15 dk). Canlı modda 7 günde bir arka planda otomatik çalışır |
 | `python -m btc_tahmin rapor --aralik 1h` | Diğer zaman dilimleri: 5m, 10m, 15m, 30m, 1h, 4h |
 | `python -m btc_tahmin kontrol` | **Her metrik geldi mi?** ✓ geldi / ○ boş ama normal / ✗ hata (sebebiyle). `--kaynaklar` ile dış kaynakları şimdi tekrar dener |
 
@@ -89,10 +89,20 @@ Sonraki çalıştırmalar sadece yeni mumları indirir.
 - **Strateji tarama (`tarama.html`):** beş strateji ailesinin ~400 varyantı (EMA çiftleri, RSI eşikleri, hacim filtresi, çıkış
   süresi, sadece long/short) denenir; veri %60 eğitim / %20 doğrulama / %20 test bölünür ve yalnızca üç dönemde de komisyon
   sonrası artı yazanlar gösterilir. Denenen aday sayısı ve her dönemin sonucu açıkça yazılır (şans payı için).
-- **Şimdi gir (`simdi.html`):** tüm kaynakların son mumdaki sinyalleri tek listede: yön, çıkış mumu ve saati, grafik türü,
+- **Mum tahmini (`tahmin.html`):** 1/2/4/8 mum için regresyon modelleri; şu andan itibaren 8 mumluk tahmin yolu ve %80 hata
+  bandı; son 1 gün için her mumda önceden yapılmış tahmin ile gerçek, yön isabeti ve ortalama hata (son gün eğitime girmez).
+- **Stratejiler canlı karnede:** Fable / tarama / uzun vade girişleri sinyal anında canlı günlüğe yazılır, çıkış zamanı gelince
+  gerçek fiyatla kapatılır; karne kartında strateji başına sonuç, strateji bloklarında "canlı karne" kutusu. Telegram'a da gider.
+- **Yürüyen pencere testi:** tarama ve uzun vade sayfalarında seçim her 30 günde bir yalnızca o güne kadarki veriyle yeniden
+  yapılır, sonraki ay ölçülür. **Rejim kuralı:** yalnızca bir rejimde artı yazan strateji rozetlenir; diğer rejimde sinyali
+  Şimdi gir'de "bastırılan" bölümüne düşer. **Stop / kâr al** varyantları (ATR tabanlı) taramaya eklendi (~600 aday).
+- **Gerçek funding:** vadeli modda Binance funding geçmişi indirilir (önbellekli) ve net hesaplarda gerçek oran kullanılır;
+  alınamazsa sabit %0,01 / 8 saat varsayımına düşer (Veri durumu panelinde yazar).
+- **Şimdi gir (`simdi.html`):** iki sekme: son mum ve son 1 saat. Sayfa açıkken yeni sinyal gelince tarayıcı bildirimi ve
+  kısa bir ses (🔔 düğmesiyle izin verilir). tüm kaynakların son mumdaki sinyalleri tek listede: yön, çıkış mumu ve saati, grafik türü,
   geçmiş performans ve ilgili sayfaya bağlantı (doğru coin/strateji açılır). Açık pozisyonlar ve eğilimler ayrı bölümde.
-- **Son 1 saat (`son-saat.html`):** son 1 saat içinde sinyale dönmüş her kaynak; giriş/çıkış saati ve şu anki durum (AÇIK /
-  KAPANDI, net). Pencere `config.SON_SAAT`.
+- **Son 1 saat:** Şimdi gir sayfasının ikinci sekmesi; son 1 saat içinde sinyale dönmüş her kaynak, giriş/çıkış saati ve şu
+  anki durum (AÇIK / KAPANDI, net). Pencere `config.SON_SAAT`.
 - **Uzun vade (`umut.html`):** aynı tarama 1 saatlik ve 4 saatlik mumlarda; her zaman dilimi için tipik hareket ÷ komisyon
   oranı, al-tut karşılaştırması ve geçen stratejilerin trendli / yatay piyasadaki ayrı sonuçları.
 - **Sinyaller sayfası (`sinyaller.html`, üst menüde "Sinyaller · 24 saat"):** son 24 saatin her mumu için kısa vade ve gün sonu

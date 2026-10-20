@@ -67,6 +67,11 @@ GERIYE_MAX_MUM = 12
 CIZELGE_MUM = 96
 # 'Son 1 saat' sayfası: bu kadar saat içinde sinyale dönmüş kaynaklar listelenir
 SON_SAAT = 1.0
+# Sahte keşif testi canlı modda bu kadar günde bir arka planda otomatik çalışır (0 = kapalı); tekrar sayısı
+SAHTE_OTOMATIK_GUN = 7
+SAHTE_OTOMATIK_TEKRAR = 3
+# Kural önbelleğine liste başına en fazla bu kadar kural yazılır (dosya boyutu)
+KURAL_ONBELLEK_SINIRI = 150
 
 # Tutarlılık seviyeleri (Risk-A, Risk-B ...); eşik düşürülürse alt seviyeler de eklenir (aşağıda)
 TUTARLILIK_SEVIYELERI = [0.90, 0.85, 0.80, 0.75, 0.70]

@@ -210,7 +210,7 @@ def kontrol(rapor: dict) -> list[dict]:
                             + f" ({sk['tekrar']} tekrar, {sk['zaman'][:10]})"))
         else:
             s.append(_satir(g, "Sahte keşif testi", "normal",
-                            "Henüz çalıştırılmadı. Kaç kuralın şans eseri olabileceğini ölçer: python -m btc_tahmin sahte"))
+                            "Henüz yok. Canlı modda 7 günde bir arka planda otomatik çalışır; hemen istersen: python -m btc_tahmin sahte"))
         sim = (c.get("simulasyon") or {}).get("derin")
         s.append(_satir(g, "Kasa simülasyonu (derin kurallar)", "ok" if sim else "normal",
                         f"{sim['baslangic_kasa']:,.0f}$ → {sim['son_kasa']:,.0f}$ ({sim['islem']} işlem)" if sim else

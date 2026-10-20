@@ -42,7 +42,7 @@ def kurallari_getir(sembol, aralik, o, K, KT, hedef, hizli: bool) -> dict[str, l
         "derin": derin_tarama(KT, hedef),
     }
     # Komisyon sonrası test döneminde zarar ettiren kurallar elenir; kalanlara net kazanç bilgisi eklenir
-    kurallar = {k: performans.performans_ekle_ve_ele(v, o, KT, hedef) for k, v in kurallar.items()}
+    kurallar = {k: performans.performans_ekle_ve_ele(v[:config.KURAL_ONBELLEK_SINIRI], o, KT, hedef) for k, v in kurallar.items()}
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
     dosya.write_text(json.dumps({"zaman": datetime.now(timezone.utc).isoformat(), "surum": KURAL_SURUM,
                                  "min_tutarlilik": config.MIN_TUTARLILIK, "kurallar": kurallar},
@@ -336,6 +336,42 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
     return sonuc
 
 
+_SAHTE_CALISIYOR = {"aktif": False}
+
+
+def _sahte_otomatik(aralik: str, semboller, mumlar: dict) -> None:
+    """Canlı modda sahte keşif testi eskidiyse arka planda (ayrı iş parçacığı) yeniler; rapor beklemez."""
+    if not config.SAHTE_OTOMATIK_GUN or _SAHTE_CALISIYOR["aktif"]:
+        return
+    eskiyen = []
+    for s in semboller:
+        f = config.CIKTI_DIR / f"sahte_{s}_{aralik}.json"
+        try:
+            yas = (datetime.now(timezone.utc) - datetime.fromisoformat(json.loads(f.read_text(encoding="utf-8"))["zaman"])).days
+        except (OSError, ValueError, KeyError):
+            yas = 10**6
+        if yas >= config.SAHTE_OTOMATIK_GUN:
+            eskiyen.append(s)
+    if not eskiyen:
+        return
+
+    def kos():
+        from . import sahte
+        try:
+            for s in eskiyen:
+                sahte.calistir_ve_kaydet(s, aralik, mumlar, tekrar=config.SAHTE_OTOMATIK_TEKRAR)
+            print("  · sahte keşif testi arka planda tamamlandı; bir sonraki raporda görünür", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"  · sahte keşif testi arka planda başarısız: {e}", flush=True)
+        finally:
+            _SAHTE_CALISIYOR["aktif"] = False
+
+    import threading
+    _SAHTE_CALISIYOR["aktif"] = True
+    print(f"  · sahte keşif testi arka planda başlıyor ({', '.join(eskiyen)}; {config.SAHTE_OTOMATIK_TEKRAR} tur, rapor beklemez)", flush=True)
+    threading.Thread(target=kos, daemon=True, name="sahte-kesif").start()
+
+
 def _ilerleme(i: int, toplam: int, sembol: str) -> None:
     """Terminale ve (canlı moddaysa) 'hazırlanıyor' sayfasına ilerleme yazar."""
     from . import sunucu
@@ -377,6 +413,8 @@ def calistir(aralik: str = config.VARSAYILAN_ARALIK, semboller=None, hizli: bool
         gunluk.yaz(gun)
         rapor["bildirim"] = bildirim.yeni_sinyaller(yeni)
     rapor["karne"] = gunluk.karne(gun)
+    if canli:
+        _sahte_otomatik(aralik, semboller, mumlar)
     from . import saglik
     rapor["saglik"] = saglik.kontrol(rapor)
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
