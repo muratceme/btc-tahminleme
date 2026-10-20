@@ -35,7 +35,8 @@ def _mesaj(s: dict) -> str:
     sembol = s["sembol"].replace("USDT", "")
     ok = "▲" if s["yon_yukari"] else "▼"
     zaman = (pd.Timestamp(s["sinyal_zamani"]) + TSI).strftime("%H:%M")
-    return (f"{ok} <b>{html.escape(sembol)}</b> · %{float(s['tutarlilik']) * 100:.0f} tutarlılık\n"
+    etiket = "komisyon sonrası artı oranı" if s.get("tur") == "strateji" else "tutarlılık"
+    return (f"{ok} <b>{html.escape(sembol)}</b> · %{float(s['tutarlilik']) * 100:.0f} {etiket}\n"
             f"{html.escape(s['aciklama'])}\n"
             f"Giriş {s['giris']:,} · sinyal mumu {zaman} TSİ · sonuç {(pd.Timestamp(s['cikis_zamani']) + TSI).strftime('%H:%M')}")
 
@@ -45,7 +46,8 @@ def yeni_sinyaller(yeni: list[dict]) -> dict:
     if not ayarli():
         return {"durum": "kapalı", "gonderilen": 0}
     esik = float(config.TELEGRAM.get("min_tutarlilik", 0.8))
-    secilen = [s for s in yeni if float(s["tutarlilik"] or 0) >= esik]
+    strat = bool(config.TELEGRAM.get("stratejiler", True))   # strateji girişleri (tarama/uzun vade) eşikten bağımsız gider
+    secilen = [s for s in yeni if float(s["tutarlilik"] or 0) >= esik or (strat and s.get("tur") == "strateji")]
     if not secilen:
         return {"durum": "ok", "gonderilen": 0}
     secilen.sort(key=lambda s: -float(s["tutarlilik"]))

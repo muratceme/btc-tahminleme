@@ -234,6 +234,27 @@ def mum_dosyasi_yaz(sembol: str, aralik: str, o: pd.DataFrame, adet: int = confi
     return anahtar
 
 
+def strateji_sinyalleri(c: dict) -> list[dict]:
+    """Fable / tarama / uzun vade stratejilerinin SON mumda verdiği girişler (canlı günlüğe kaydedilir)."""
+    out = []
+    kaynaklar = [("fable", c["aralik"], c.get("fable") or {}), ("tarama", c["aralik"], (c.get("tarama") or {}).get("sayfa") or {})]
+    for tf, d in ((c.get("umut") or {}).get("dilimler") or {}).items():
+        kaynaklar.append(("umut", tf, d.get("sayfa") or {}))
+    for kod, tf, strat in kaynaklar:
+        for sid, f in strat.items():
+            cz = f.get("cizelge") or []
+            if not cz or cz[-1]["sinyal"] == "BEKLE":
+                continue
+            son = cz[-1]
+            st = f["istatistik"]["tum"]
+            d_ = f.get("donemler")
+            beklenen = (d_["test"].get("net_kazanma_orani") if d_ and d_["test"].get("islem") else st.get("net_kazanma_orani")) or 0.5
+            out.append({"id": f"strateji:{kod}:{sid}:{tf}", "ad": f["ad"], "kaynak": kod, "tf": tf, "sid": sid,
+                        "yon": "YESIL" if son["sinyal"] == "LONG" else "KIRMIZI", "zaman": son["zaman"], "fiyat": son["fiyat"],
+                        "maks_mum": son.get("maks_mum") or son.get("cikis_mum") or 1, "tutarlilik": round(float(beklenen), 4)})
+    return out
+
+
 def sahte_kesif_oku(sembol: str, aralik: str) -> dict | None:
     """'python -m btc_tahmin sahte' çıktısı varsa okur (kaç kuralın şans eseri olabileceği)."""
     f = config.CIKTI_DIR / f"sahte_{sembol}_{aralik}.json"
@@ -307,6 +328,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
     }
     from . import umut
     sonuc["umut"] = umut.calis(mumlar, sembol, o, sonuc["tarama"]) if aralik in ("5m", "10m", "15m", "30m") else None
+    sonuc["strateji_sinyalleri"] = strateji_sinyalleri(sonuc)
     return sonuc
 
 

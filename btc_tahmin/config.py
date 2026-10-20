@@ -135,7 +135,7 @@ ISLEM_BASI_RISK_YUZDE = float(KULLANICI.get("islem_basi_risk_yuzde", 1.0))
 MAX_KALDIRAC = float(KULLANICI.get("max_kaldirac", 3))
 
 # Telegram bildirimi
-TELEGRAM = {"token": "", "chat_id": "", "min_tutarlilik": 0.80, **KULLANICI.get("telegram", {})}
+TELEGRAM = {"token": "", "chat_id": "", "min_tutarlilik": 0.80, "stratejiler": True, **KULLANICI.get("telegram", {})}
 
 # Canlı karne: canlı isabeti bunun altına düşen kural (en az N canlı sinyalde) emekliye ayrılır
 KARNE_MIN_SINYAL = 10

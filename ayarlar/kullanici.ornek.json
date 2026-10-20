@@ -11,6 +11,7 @@
   "telegram": {
     "token": "",
     "chat_id": "",
-    "min_tutarlilik": 0.80
+    "min_tutarlilik": 0.80,
+    "stratejiler": true
   }
 }

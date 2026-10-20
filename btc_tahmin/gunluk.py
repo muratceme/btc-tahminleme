@@ -108,9 +108,17 @@ def kaydet(df: pd.DataFrame, rapor: dict) -> tuple[pd.DataFrame, list[dict]]:
             adaylar.append(("gun_sonu_ozet", {"id": "OZET", "hedef": "gun_sonu_ozet",
                                               "yon": "YESIL" if oz["long_risk"] < 50 else "KIRMIZI",
                                               "tutarlilik": oz.get("en_tutarli", 0), "kosullar": []}))
+        # Stratejiler (Fable / tarama / uzun vade): giriş mumu kendi zaman diliminde; çıkış zamanla (en geç N mum) ölçülür
+        for r in c.get("strateji_sinyalleri", []):
+            st = pd.Timedelta(r["tf"].replace("m", "min"))
+            k = int(round((r["maks_mum"] + 1) * st / sure)) - 1          # taban mum cinsinden "ileri_k"
+            adaylar.append(("strateji", {"id": r["id"], "hedef": f"ileri_{max(1, k)}", "yon": r["yon"], "tutarlilik": r["tutarlilik"],
+                                         "kosullar": [], "zaman": r["zaman"], "giris": r["fiyat"],
+                                         "metin": f"{r['ad']} · {r['kaynak']} {r['tf']} · çıkış en geç {r['maks_mum']} mum"}))
         for tur, r in adaylar:
+            t_sig = pd.Timestamp(r["zaman"]) if r.get("zaman") else t
             acik = df[(df["sembol"] == sembol) & (df["kural_id"] == r["id"]) & (df["aralik"] == aralik)
-                      & ((df["sinyal_zamani"] == t) | ((df["durum"] == "bekliyor") & (df["cikis_zamani"] > t)))]
+                      & ((df["sinyal_zamani"] == t_sig) | ((df["durum"] == "bekliyor") & (df["cikis_zamani"] > t_sig)))]
             if not acik.empty:     # aynı sinyal zaten kayıtlı ya da önceki işlemi hâlâ açık
                 continue
             yukari = r["yon"].startswith("YESIL")
@@ -120,11 +128,13 @@ def kaydet(df: pd.DataFrame, rapor: dict) -> tuple[pd.DataFrame, list[dict]]:
             _, metin = hedef_metni(hedef_ad, 1 if r["yon"].startswith("YESIL") else 0, aralik)
             if tur == "gun_sonu_ozet":
                 metin = f"Gün sonu özeti: {'LONG lehine' if yukari else 'SHORT lehine'} (long riski %{oz['long_risk']})"
+            if r.get("metin"):
+                metin = r["metin"]
             satir = {
                 "kayit_zamani": simdi, "sembol": sembol, "aralik": aralik, "tur": tur, "kural_id": r["id"],
                 "hedef": r["hedef"], "yon_yukari": int(yukari), "tutarlilik": r["tutarlilik"],
                 "aciklama": metin + (" · " + " + ".join(kosul_bilgisi(k)["etiket"] for k in r["kosullar"]) if r["kosullar"] else ""),
-                "sinyal_zamani": t, "giris": c["fiyat"], "cikis_zamani": _cikis_zamani(r["hedef"], t, sure),
+                "sinyal_zamani": t_sig, "giris": r.get("giris", c["fiyat"]), "cikis_zamani": _cikis_zamani(r["hedef"], t_sig, sure),
                 "durum": "bekliyor", "cikis": None, "brut_yuzde": None, "net_yuzde": None,
             }
             yeni.append(satir)
@@ -148,15 +158,23 @@ def karne(df: pd.DataFrame) -> dict:
                 "net_kazanma_orani": round(float((net > 0).mean()), 4)}
 
     son7 = biten[biten["sinyal_zamani"] >= pd.Timestamp.now(tz="UTC") - timedelta(days=7)]
+    strat_m = df["tur"] == "strateji"
     turler = {}
-    for ad, d in biten.groupby(biten["hedef"].map(_tur_adi)):
+    for ad, d in biten[~strat_m.loc[biten.index]].groupby(biten.loc[~strat_m.loc[biten.index], "hedef"].map(_tur_adi)):
         turler[ad] = ozet(d)
+    if strat_m.any():
+        turler["Stratejiler (Fable / tarama / uzun vade)"] = ozet(biten[strat_m.loc[biten.index]])
+    stratejiler = {}
+    for kid, d in df[strat_m].groupby("kural_id"):
+        b = d[d["durum"].isin(["tuttu", "tutmadi"])]
+        stratejiler[str(kid)] = {"ad": str(d["aciklama"].iloc[-1]).split(" · ")[0], "toplam": int(len(d)), "bekleyen": int((d["durum"] == "bekliyor").sum()),
+                                 **(ozet(b) if not b.empty else {"sinyal": 0}), "son": d["sinyal_zamani"].max().isoformat()}
     son = df.sort_values("sinyal_zamani", ascending=False).head(30)
     return {
         "toplam": int(len(df)), "bekleyen": int((df["durum"] == "bekliyor").sum()),
         "ilk_sinyal": df["sinyal_zamani"].min().isoformat(),
         "genel": ozet(biten), "son_7_gun": ozet(son7), "turler": turler,
-        "emekli": sorted(emekliler(df)),
+        "emekli": sorted(emekliler(df)), "stratejiler": stratejiler,
         "son_sinyaller": [
             {"zaman": r["sinyal_zamani"].isoformat(), "sembol": r["sembol"], "aciklama": r["aciklama"], "kural_id": str(r["kural_id"]),
              "hedef": str(r["hedef"]), "yon_yukari": int(r["yon_yukari"]), "aralik": str(r["aralik"]), "giris": float(r["giris"]),

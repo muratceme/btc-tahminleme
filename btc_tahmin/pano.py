@@ -511,6 +511,31 @@ def _net_yazi(v) -> str:
     return "" if v is None else f"{v:+.2f}%"
 
 
+def _karne_strateji_tablosu(st: dict) -> str:
+    """Canlı karnede strateji başına sonuç (Fable / tarama / uzun vade girişleri)."""
+    if not st:
+        return ""
+    sira = sorted(st.items(), key=lambda kv: -(kv[1].get("toplam") or 0))
+    satir = "".join(
+        f'<tr><td>{_e(v["ad"])}<div class="cok-kucuk">{_e(k.split(":")[1])} · {_e(k.split(":")[-1])}</div></td><td class="sayi">{v["toplam"]}</td>'
+        f'<td class="sayi">{v.get("bekleyen", 0)}</td>'
+        + (f'<td class="sayi">%{v["net_kazanma_orani"] * 100:.0f}</td><td class="sayi {"iyi" if v["toplam_net"] >= 0 else "kotu"}">{v["toplam_net"]:+.2f}%</td>'
+           if v.get("sinyal") else '<td class="sayi">—</td><td class="sayi">—</td>') + "</tr>" for k, v in sira[:12])
+    return (f'<div class="tablo-sar" style="margin-top:12px"><table><thead><tr><th>Strateji (canlı)</th><th class="sayi">Giriş</th><th class="sayi">Açık</th>'
+            f'<th class="sayi">Komisyon sonrası artı</th><th class="sayi">Toplam net</th></tr></thead><tbody>{satir}</tbody></table></div>'
+            '<p class="cok-kucuk">Strateji girişleri sinyal anında kaydedilir, çıkış zamanı gelince gerçek fiyatla kapatılır. Bu tablo, strateji sayfalarındaki geçmiş testin canlı sağlamasıdır.</p>')
+
+
+def _canli_kutu(v: dict | None) -> str:
+    """Strateji bloğunda canlı karne kutusu."""
+    if not v:
+        return ('<div class="kpi"><div class="e">Canlı karne</div><div class="d">—</div><div class="a">henüz canlı giriş yok; sinyal geldikçe burada birikir</div></div>')
+    if not v.get("sinyal"):
+        return f'<div class="kpi"><div class="e">Canlı karne</div><div class="d">{v["toplam"]} giriş</div><div class="a">{v.get("bekleyen", 0)} açık · sonuçlanan yok</div></div>'
+    return (f'<div class="kpi"><div class="e">Canlı karne · gerçek sonuç</div><div class="d {"iyi" if v["toplam_net"] > 0 else "kotu"}">{v["toplam_net"]:+.2f}%</div>'
+            f'<div class="a">{v["sinyal"]} kapanan · artı %{v["net_kazanma_orani"] * 100:.0f} · işlem başı {v["ort_net"]:+.3f}% · {v.get("bekleyen", 0)} açık</div></div>')
+
+
 def _karne_karti(k: dict, bildirim: dict | None) -> str:
     bas = _baslik("Canlı karne · sistemin gerçek sinyal performansı", "karne")
     bd = bildirim or {}
@@ -543,6 +568,7 @@ def _karne_karti(k: dict, bildirim: dict | None) -> str:
         f'<div class="kpi"><div class="e">Emekli kural</div><div class="d">{len(k.get("emekli", []))}</div><div class="a">canlıda isabeti düşenler</div></div></div>'
         + (f'<div class="tablo-sar" style="margin-top:12px"><table><thead><tr><th>Sinyal türü</th><th class="sayi">Sinyal</th><th class="sayi">Canlı isabet</th>'
            f'<th class="sayi">Beklenen</th><th class="sayi">Toplam net</th></tr></thead><tbody>{turler}</tbody></table></div>' if turler else "")
+        + _karne_strateji_tablosu(k.get("stratejiler") or {})
         + f'<details><summary>Son sinyaller</summary><ul class="liste">{son}</ul></details><p class="cok-kucuk">{tel}</p>')
 
 
@@ -1258,7 +1284,7 @@ def _rejim_kutulari(r: dict | None) -> str:
             + kutu("Test · YATAY piyasada", r["yatay"], "ADX ≤ 25 iken girilen işlemler") + "</div>")
 
 
-def _fable_strateji(sembol: str, aralik: str, sid: str, f: dict, maliyet: float) -> str:
+def _fable_strateji(sembol: str, aralik: str, sid: str, f: dict, maliyet: float, canli: dict | None = None) -> str:
     cz = f["cizelge"]
     sin = [r for r in cz if r["sinyal"] != "BEKLE"]
     kap = [r["cikis"] for r in sin if r["cikis"] and r["cikis"]["durum"] == "kapandi"]
@@ -1301,7 +1327,8 @@ Tek pozisyon: pozisyon açıkken gelen sinyal atlanır. Komisyon (işlem başı 
 {_donem_kutulari(f.get("donemler"))}{_rejim_kutulari(f.get("rejim"))}
 <div class="kpi-izgara kpi-4">{_fable_istatistik_kutu(f"Tüm geçmiş · {f['veri_gun']} gün", st["tum"], True)}{_fable_istatistik_kutu("Son 90 gün", st["son90"])}{_fable_istatistik_kutu("Son 30 gün", st["son30"])}
 <div class="kpi"><div class="e">Son 24 saat</div><div class="d {"iyi" if net24 > 0 else ("kotu" if net24 < 0 else "")}">{len(sin)} sinyal</div>
-<div class="a">{sum(1 for r in sin if r["sinyal"] == "LONG")} long · {sum(1 for r in sin if r["sinyal"] == "SHORT")} short · kapananlarda net {net24:+.2f}% · yön doğru {sum(1 for c in kap if c["dogru"])}/{len(kap)}</div></div></div>
+<div class="a">{sum(1 for r in sin if r["sinyal"] == "LONG")} long · {sum(1 for r in sin if r["sinyal"] == "SHORT")} short · kapananlarda net {net24:+.2f}% · yön doğru {sum(1 for c in kap if c["dogru"])}/{len(kap)}</div></div>
+{_canli_kutu(canli)}</div>
 <p class="cok-kucuk" style="margin-top:10px">Son 24 saat şeridi: yeşil long girişi, kırmızı short girişi, gri pozisyon açık, kesikli çerçeve: çıkış henüz gelmedi.</p>
 <div class="serit">{"".join(hucre)}</div><div class="serit-saat"><span>{_tsi(cz[0]["zaman"]) if cz else ""}</span><span>{_tsi(cz[-1]["zaman"]) if cz else ""} TSİ</span></div>
 <div class="sz-grafik" data-strat-grafik="{sid}"></div></div>
@@ -1315,7 +1342,8 @@ Tek pozisyon: pozisyon açıkken gelen sinyal atlanır. Komisyon (işlem başı 
 </div></div>"""
 
 
-def _fable_coin(c: dict) -> str:
+def _fable_coin(c: dict, canli: dict | None = None) -> str:
+    canli = canli or {}
     sembol, aralik = c["sembol"], c["aralik"]
     fb = c.get("fable") or {}
     maliyet = (c.get("yon") or {}).get("maliyet_yuzde", 0)
@@ -1326,7 +1354,7 @@ def _fable_coin(c: dict) -> str:
         for i, (sid, f) in enumerate(fb.items()))
     return (f'<section class="coin sz-coin fb-coin" id="{_e(sembol)}" data-sembol="{_e(sembol)}">'
             f'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span class="kucuk">Strateji:</span>{dugme}</div>'
-            + "".join(_fable_strateji(sembol, aralik, sid, f, maliyet) for sid, f in fb.items()) + "</section>")
+            + "".join(_fable_strateji(sembol, aralik, sid, f, maliyet, canli.get(f"strateji:fable:{sid}:{aralik}")) for sid, f in fb.items()) + "</section>")
 
 
 def fable_html(rapor: dict, yenile_sn: int | None = None) -> str:
@@ -1344,7 +1372,7 @@ def fable_html(rapor: dict, yenile_sn: int | None = None) -> str:
 bütün geçmişteki sonuç olduğu gibi gösteriliyor. Her stratejinin <b>çıkış kuralı</b> da belli (zamanla ya da koşulla). Üstteki düğmelerle strateji seç;
 şerit, grafik ve tablo Sinyaller sayfasıyla aynı mantıkta. Kâr faktörü 1'in altındaysa ya da son 90 gün eksideyse o strateji bu piyasada çalışmıyor demektir, ben de öyle derim.</p></div>
 <div class="sekmeler" role="tablist">{sekmeler}</div>
-{"".join(_fable_coin(c) for c in coinler.values())}
+{"".join(_fable_coin(c, (rapor.get("karne") or {}).get("stratejiler")) for c in coinler.values())}
 </main>
 {_mum_scriptleri(v.get("mum") for v in veri.values())}<script>window.FB={_json.dumps(veri, ensure_ascii=False, separators=(",", ":"))};</script>
 <script src="statik/lightweight-charts.standalone.production.js"></script>
@@ -1362,6 +1390,7 @@ def tarama_html(rapor: dict, yenile_sn: int | None = None) -> str:
         f'<span class="cok-kucuk mono">{len((c.get("tarama") or {}).get("secilen", []))} strateji geçti</span></button>'
         for s, c in coinler.items())
     veri, bolumler = {}, []
+    canli = (rapor.get("karne") or {}).get("stratejiler") or {}
     for s_, c in coinler.items():
         t = c.get("tarama") or {}
         sayfa = t.get("sayfa") or {}
@@ -1388,7 +1417,7 @@ def tarama_html(rapor: dict, yenile_sn: int | None = None) -> str:
         maliyet = (c.get("yon") or {}).get("maliyet_yuzde", 0)
         bolumler.append(f'<section class="coin sz-coin fb-coin" id="{_e(s_)}" data-sembol="{_e(s_)}">{ozet}'
                         f'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span class="kucuk">Geçen stratejiler (test kâr faktörüne göre):</span>{dugme}</div>'
-                        + "".join(_fable_strateji(s_, c["aralik"], sid, f, maliyet) for sid, f in sayfa.items()) + "</section>")
+                        + "".join(_fable_strateji(s_, c["aralik"], sid, f, maliyet, canli.get(f"strateji:tarama:{sid}:{c['aralik']}")) for sid, f in sayfa.items()) + "</section>")
     govde = f"""<main>
 <div class="kart bolum"><p class="kucuk" style="margin:0"><b>Strateji tarama:</b> Fable sinyalleri sayfasındaki el yazımı stratejiler gerçek veride zarar yazınca tersinden gittim: beş strateji ailesinin yüzlerce varyantı
 (EMA çiftleri, RSI eşikleri, hacim filtresi, çıkış süresi, sadece long / sadece short…) denenir. Veri kronolojik olarak %60 eğitim / %20 doğrulama / %20 test diye bölünür ve yalnızca
@@ -1434,6 +1463,7 @@ def umut_html(rapor: dict, yenile_sn: int | None = None) -> str:
         f'<span class="cok-kucuk mono">{sum(d["secilen_sayisi"] for d in ((c.get("umut") or {}).get("dilimler") or {}).values())} strateji geçti</span></button>'
         for s, c in coinler.items())
     veri, bolumler = {}, []
+    canli = (rapor.get("karne") or {}).get("stratejiler") or {}
     for s_, c in coinler.items():
         u = c.get("umut")
         if not u:
@@ -1458,7 +1488,7 @@ def umut_html(rapor: dict, yenile_sn: int | None = None) -> str:
                     f'{_e(f["ad"])} <span class="mono cok-kucuk iyi">test {f["donemler"]["test"]["toplam_net"]:+.1f}%</span></button>'
                     for j, (sid, f) in enumerate(d["sayfa"].items()))
                 icerik = (ozet + f'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span class="kucuk">Geçen stratejiler:</span>{dugme}</div>'
-                          + "".join(_fable_strateji(anahtar, tf, sid, f, maliyet) for sid, f in d["sayfa"].items()))
+                          + "".join(_fable_strateji(anahtar, tf, sid, f, maliyet, canli.get(f"strateji:umut:{sid}:{tf}")) for sid, f in d["sayfa"].items()))
             tf_blok.append(f'<div class="tf-blok fb-coin" data-tf="{tf}" data-sembol="{_e(anahtar)}"{"" if i == 0 else " hidden"}>{icerik}</div>')
         bolumler.append(f'<section class="coin" id="{_e(s_)}">'
                         f'<div class="kart bolum"><div class="kart-baslik"><span>{_e(s_.replace("USDT", ""))} · zaman dilimi karşılaştırması</span></div>{_umut_tablo(u["ozetler"])}</div>'

@@ -243,3 +243,28 @@ def test_son_saat_penceresi():
     a = anlik.son_saat(rapor, 1.0)
     assert [r["kaynak"] for r in a["satirlar"]] == ["Pano · aktif kural", "Fable sinyalleri"]   # 10:00 pencere dışı, en yeni üstte
     assert a["acik"] == 1 and a["kapanan"] == 1 and a["satirlar"][0]["link"] == "grafik.html?s=BTCUSDT&k=abc"
+
+
+def test_strateji_gunluge_kaydedilir_ve_karnede_gorunur():
+    import tempfile
+    from pathlib import Path as _P
+    from btc_tahmin import config, gunluk
+    from tests.sentetik_test import sahte_mumlar
+    config.VERI_DIR = _P(tempfile.mkdtemp())
+    m = sahte_mumlar(n=300)
+    son = m.iloc[-1]
+    giris_zamani = m["time"].iloc[-40]
+    rapor = {"coinler": {"BTCUSDT": {"aralik": "15m", "son_mum_zamani": son["time"].isoformat(), "fiyat": float(son["close"]),
+                                     "aktif_tum": [], "risk": {"ozet": {}},
+                                     "strateji_sinyalleri": [{"id": "strateji:umut:trend_9_21:1h", "ad": "Trend EMA9/21", "kaynak": "umut", "tf": "1h", "sid": "trend_9_21",
+                                                              "yon": "YESIL", "zaman": giris_zamani.isoformat(), "fiyat": 100.0, "maks_mum": 8, "tutarlilik": 0.6}]}}}
+    df, yeni = gunluk.kaydet(gunluk.oku(), rapor)
+    assert len(yeni) == 1 and yeni[0]["tur"] == "strateji" and yeni[0]["hedef"] == "ileri_35" and yeni[0]["giris"] == 100.0
+    assert yeni[0]["cikis_zamani"] == giris_zamani + pd.Timedelta("15min") * 35      # 1h x 9 mum - 15 dk
+    df2, yeni2 = gunluk.kaydet(df, rapor)
+    assert not yeni2                                                                  # aynı giriş tekrar yazılmaz
+    df3 = gunluk.sonuclandir(df2, {"BTCUSDT": m})
+    assert df3["durum"].iloc[0] in ("tuttu", "tutmadi")
+    k = gunluk.karne(df3)
+    assert "strateji:umut:trend_9_21:1h" in k["stratejiler"] and k["stratejiler"]["strateji:umut:trend_9_21:1h"]["sinyal"] == 1
+    assert "Stratejiler (Fable / tarama / uzun vade)" in k["turler"]
