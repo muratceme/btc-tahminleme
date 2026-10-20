@@ -108,6 +108,7 @@ def islemler(o: pd.DataFrame, strat: dict) -> list[dict]:
     c = o["close"].to_numpy()
     saat = performans.mum_saati(o)
     maliyet = performans.islem_maliyeti()
+    kum = performans.funding_kumulatif(o)
     out, acik = [], -1
     for i in np.nonzero(long_ | short)[0]:
         if i <= acik:
@@ -117,11 +118,18 @@ def islemler(o: pd.DataFrame, strat: dict) -> list[dict]:
         if j is None:          # çıkış mumu henüz gelmedi: açık işlem, şimdiki fiyatla değerlendirilir
             jj, durum = len(o) - 1, "acik"
             acik = len(o)
+        elif isinstance(j, tuple):
+            jj, durum, acik = j[0], "kapandi", j[0]
         else:
             jj, durum = j, "kapandi"
             acik = j
-        brut = (c[jj] / c[i] - 1) * 100 * (1 if yon == "LONG" else -1)
-        net = brut - maliyet - float(performans.funding_maliyeti((jj - i) * saat))
+        cikis_fiyat = c[jj]
+        if isinstance(j, tuple):          # (mum, fiyat): stop ya da kâr al seviyesinden çıkış
+            jj, cikis_fiyat = j
+            durum, acik = "kapandi", jj
+        brut = (cikis_fiyat / c[i] - 1) * 100 * (1 if yon == "LONG" else -1)
+        fund = (kum[jj] - kum[i]) * (1 if yon == "LONG" else -1) if kum is not None else float(performans.funding_maliyeti((jj - i) * saat))
+        net = brut - maliyet - float(fund)
         out.append({"i": int(i), "j": int(jj), "yon": yon, "durum": durum, "brut": round(float(brut), 3),
                     "net": round(float(net), 3), "dogru": bool(brut > 0), "maks_mum": maks})
     return out
@@ -212,6 +220,40 @@ def _sabit_cikis(n):
     return cikis
 
 
+def _stop_cikis(n, k_stop, k_tp):
+    """ATR tabanlı stop ve kâr al: giriş fiyatından k_stop×ATR aşağı (long) stop, k_tp×ATR yukarı kâr al; en geç n mum.
+    Aynı mumda ikisi de görülürse stop sayılır (kötümser)."""
+    def cikis(o):
+        c, h, lo, atr = o["close"].to_numpy(), o["high"].to_numpy(), o["low"].to_numpy(), o["atr"].to_numpy()
+        son = len(o) - 1
+
+        def f(i, yon):
+            a = atr[i]
+            if not np.isfinite(a) or a <= 0:
+                return i + n if i + n <= son else None
+            if yon == "LONG":
+                stop, tp = c[i] - k_stop * a, c[i] + k_tp * a
+            else:
+                stop, tp = c[i] + k_stop * a, c[i] - k_tp * a
+            for j in range(i + 1, min(i + n, son) + 1):
+                if yon == "LONG":
+                    if lo[j] <= stop:
+                        return (j, stop)
+                    if h[j] >= tp:
+                        return (j, tp)
+                else:
+                    if h[j] >= stop:
+                        return (j, stop)
+                    if lo[j] <= tp:
+                        return (j, tp)
+            return i + n if i + n <= son else None
+        return f
+    return cikis
+
+
+STOP_VARYANTLARI = [(1.5, 3.0), (1.0, 2.0)]   # (stop ATR katı, kâr al ATR katı)
+
+
 def _yon_filtre(long_, short, yon):
     if yon == "long":
         return long_, short & False
@@ -264,6 +306,15 @@ def _aile_vwap(o, sapma, ust_filtre, n, yon):
 
 def _yon_metni(yon):
     return {"ikisi": "long ve short", "long": "sadece long", "short": "sadece short"}[yon]
+
+
+def _stop_ekle(out: list[dict], aile: str, kimlik: str, ad: str, kurallar: list[str], uret, n: int):
+    """Bir temel varyanta stop/kâr al çıkışlı kardeşlerini ekler (çıkış: en geç n mum)."""
+    for ks, kt in STOP_VARYANTLARI:
+        out.append({"aile": aile, "id": f"{kimlik}_s{ks:g}_t{kt:g}", "n": n,
+                    "ad": ad.replace(f" · {n} mum ·", f" · stop {ks:g}ATR / kâr al {kt:g}ATR, en geç {n} mum ·"),
+                    "kurallar": kurallar[:-1] + [kurallar[-1].replace(f"ÇIKIŞ: {n} mum sonra", f"ÇIKIŞ: stop {ks:g}×ATR, kâr al {kt:g}×ATR, en geç {n} mum")],
+                    "uret": (lambda o, u=uret, n_=n, a=ks, b=kt: (*u(o)[:2], _stop_cikis(n_, a, b)(o), n_))})
 
 
 def _adaylar() -> list[dict]:
@@ -319,6 +370,11 @@ def _adaylar() -> list[dict]:
                                              f"SHORT: fiyat VWAP'ın %{sapma:g} üstüne yeni çıktı" + (", 4 saatlik trend aşağı" if ust else ""),
                                              f"Yön: {_yon_metni(yon)} · ÇIKIŞ: {n} mum sonra"],
                                 "uret": (lambda o, s=sapma, u=ust, n_=n, y=yon: (*_aile_vwap(o, s, u, n_, y), _sabit_cikis(n_)(o), n_))})
+    # Stop / kâr al kardeşleri: her ailenin en uzun çıkış süreli varyantları için
+    en_uzun = {"Trend": 32, "Ortalamaya dönüş": 16, "Kırılım": 32, "Momentum": 32, "VWAP sapması": 32}
+    for a in list(out):
+        if a["n"] == en_uzun.get(a["aile"]):
+            _stop_ekle(out, a["aile"], a["id"], a["ad"], a["kurallar"], a["uret"], a["n"])
     return out
 
 
@@ -344,8 +400,10 @@ def tarama(o: pd.DataFrame, ilerleme=None) -> dict:
     n_bar = len(o)
     gecen = {"egitim": 0, "dogrulama": 0, "test": 0}
     secilen = []
+    tum_islemler: dict[str, list[dict]] = {}
     for k, a in enumerate(adaylar):
         isl = islemler(o, a)
+        tum_islemler[a["id"]] = isl
         d = _donem_istatistik(isl, n_bar)
         e, dg, t = d["egitim"], d["dogrulama"], d["test"]
         if e["islem"] < 30 or e["toplam_net"] <= 0 or (e["kar_faktoru"] or 0) < 1.1:
@@ -364,12 +422,76 @@ def tarama(o: pd.DataFrame, ilerleme=None) -> dict:
             ilerleme(k, len(adaylar))
     secilen.sort(key=lambda x: -x["puan"])
     return {"denenen": len(adaylar), "gecen": gecen, "secilen": secilen[:8],
-            "olcutler": "eğitim ≥30 işlem, net>0, kâr faktörü ≥1,1 · doğrulama ≥10 işlem, net>0 · test ≥10 işlem, net>0, kâr faktörü ≥1,1"}
+            "olcutler": "eğitim ≥30 işlem, net>0, kâr faktörü ≥1,1 · doğrulama ≥10 işlem, net>0 · test ≥10 işlem, net>0, kâr faktörü ≥1,1",
+            "yuruyen": yuruyen_pencere(o, adaylar, tum_islemler)}
+
+
+def _oz(d: list[dict]) -> dict:
+    if not d:
+        return {"islem": 0}
+    net = np.array([x["net"] for x in d])
+    kaz, kay = net[net > 0], net[net <= 0]
+    return {"islem": len(d), "toplam_net": round(float(net.sum()), 3), "ort_net": round(float(net.mean()), 4),
+            "kar_faktoru": round(float(kaz.sum() / -kay.sum()), 2) if len(kay) and kay.sum() < 0 else None}
+
+
+def yuruyen_pencere(o: pd.DataFrame, adaylar: list[dict], tum_islemler: dict, pencere_gun: int = 30) -> dict:
+    """Yürüyen pencere testi: her ay, "o güne kadarki veriyle hangi varyantları seçerdim" (eğitim %75 / doğrulama %25
+    aynı ölçütlerle), sonra seçilenler sonraki ayda ne yaptı? Tek bölmeden daha dürüst: seçim her ay yeniden yapılır."""
+    n = len(o)
+    t = o["time"]
+    pencere = pd.Timedelta(days=pencere_gun)
+    bas_zaman = t.iloc[int(n * 0.6)]
+    sinirlar = []
+    z = bas_zaman
+    while z < t.iloc[-1]:
+        sinirlar.append(z)
+        z = z + pencere
+    c = o["close"].to_numpy()
+    pencereler = []
+    for a, b in zip(sinirlar, sinirlar[1:] + [t.iloc[-1] + pd.Timedelta(seconds=1)]):
+        ws = int(t.searchsorted(a))
+        we = int(t.searchsorted(b))
+        egt_son = int(ws * 0.75)
+        adaylar_gecen = []
+        for ad in adaylar:
+            isl = [x for x in tum_islemler[ad["id"]] if x["durum"] == "kapandi"]
+            e = _oz([x for x in isl if x["i"] < egt_son])
+            dg = _oz([x for x in isl if egt_son <= x["i"] < ws])
+            if e["islem"] < 30 or e["toplam_net"] <= 0 or (e["kar_faktoru"] or 0) < 1.1 or dg["islem"] < 10 or dg["toplam_net"] <= 0:
+                continue
+            oos = _oz([x for x in isl if ws <= x["i"] < we])
+            adaylar_gecen.append({"ad": ad["ad"], "dogrulama_kf": dg["kar_faktoru"] or 0, "oos": oos})
+        adaylar_gecen.sort(key=lambda x: -x["dogrulama_kf"])
+        top1 = adaylar_gecen[0] if adaylar_gecen else None
+        ort = float(np.mean([x["oos"].get("toplam_net", 0.0) for x in adaylar_gecen])) if adaylar_gecen else 0.0
+        pencereler.append({"bas": a.isoformat(), "bitis": min(b, t.iloc[-1]).isoformat(), "secilen": len(adaylar_gecen),
+                           "top1_ad": top1["ad"] if top1 else None, "top1_net": top1["oos"].get("toplam_net", 0.0) if top1 else 0.0,
+                           "top1_islem": top1["oos"].get("islem", 0) if top1 else 0, "ortalama_net": round(ort, 3),
+                           "al_tut": round(float((c[min(we, n) - 1] / c[ws] - 1) * 100), 3) if we - 1 > ws else 0.0})
+    top1_toplam = round(sum(p["top1_net"] for p in pencereler), 3)
+    ort_toplam = round(sum(p["ortalama_net"] for p in pencereler), 3)
+    al_tut_toplam = round(sum(p["al_tut"] for p in pencereler), 3)
+    return {"pencere_gun": pencere_gun, "pencereler": pencereler, "top1_toplam": top1_toplam, "ortalama_toplam": ort_toplam,
+            "al_tut_toplam": al_tut_toplam, "arti_pencere": sum(1 for p in pencereler if p["top1_net"] > 0), "pencere_sayisi": len(pencereler)}
 
 
 def rejim_serisi(o: pd.DataFrame, esik: float = 25.0) -> np.ndarray:
     """Piyasa rejimi: ADX > esik ise trendli, değilse yatay."""
     return (o["adx"] > esik).fillna(False).to_numpy()
+
+
+def rejim_kurali(rj: dict | None) -> str | None:
+    """Strateji yalnızca bir rejimde artı yazıyorsa (diğerinde ≥5 işlemle eksi) o rejimin adı; yoksa None."""
+    if not rj:
+        return None
+    tr, ya = rj.get("trend", {}), rj.get("yatay", {})
+    if tr.get("islem", 0) >= 5 and ya.get("islem", 0) >= 5:
+        if tr["toplam_net"] > 0 and ya["toplam_net"] <= 0:
+            return "trend"
+        if ya["toplam_net"] > 0 and tr["toplam_net"] <= 0:
+            return "yatay"
+    return None
 
 
 def _rejim_istatistik(isl: list[dict], o: pd.DataFrame, rejim: np.ndarray) -> dict:
@@ -397,8 +519,9 @@ def tarama_sayfa_verisi(o: pd.DataFrame, tarama_sonucu: dict, rejim: np.ndarray 
         if a is None:
             continue
         isl = islemler(o, a)
+        rj = _rejim_istatistik(isl, o, rejim) if rejim is not None else None
         out[s["id"]] = {
-            "rejim": _rejim_istatistik(isl, o, rejim) if rejim is not None else None,
+            "rejim": rj, "rejim_kurali": rejim_kurali(rj),
             "ad": s["ad"], "ozet": s["aile"], "kurallar": s["kurallar"], "renk": _RENKLER[k % len(_RENKLER)],
             "istatistik": {"tum": istatistik(isl, o), "son90": istatistik(isl, o, 90), "son30": istatistik(isl, o, 30)},
             "donemler": s["donemler"], "veri_gun": int((o["time"].iloc[-1] - o["time"].iloc[0]).days),

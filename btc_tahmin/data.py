@@ -53,6 +53,61 @@ def _indir(sembol: str, aralik: str, baslangic_ms: int) -> pd.DataFrame:
                "trades", "taker_buy_base"]]
 
 
+FUNDING_HATA: dict[str, str] = {}
+
+
+def funding_gecmisi(sembol: str, gun: int = config.GECMIS_GUN, guncelle: bool = True) -> pd.DataFrame:
+    """Binance vadeli funding oranı geçmişi (8 saatte bir). Önbellek: veri/<sembol>_funding.csv. Hata olursa boş döner."""
+    config.VERI_DIR.mkdir(parents=True, exist_ok=True)
+    dosya = config.VERI_DIR / f"{sembol}_funding.csv"
+    eski = pd.DataFrame(columns=["time", "funding"])
+    if dosya.exists():
+        eski = pd.read_csv(dosya)
+        eski["time"] = pd.to_datetime(eski["time"], utc=True)
+    bas = int((time.time() - gun * 86400) * 1000)
+    if not eski.empty:
+        bas = max(bas, int(eski["time"].iloc[-1].timestamp() * 1000) + 1)
+    if guncelle:
+        satirlar = []
+        try:
+            while True:
+                r = requests.get(config.BINANCE_FUTURES + "/fapi/v1/fundingRate",
+                                 params={"symbol": sembol, "startTime": bas, "limit": 1000}, timeout=config.HTTP_TIMEOUT)
+                r.raise_for_status()
+                parca = r.json()
+                if not parca:
+                    break
+                satirlar += [(int(x["fundingTime"]), float(x["fundingRate"])) for x in parca]
+                bas = int(parca[-1]["fundingTime"]) + 1
+                if len(parca) < 1000:
+                    break
+            FUNDING_HATA.pop(sembol, None)
+        except (requests.RequestException, ValueError, KeyError) as e:
+            FUNDING_HATA[sembol] = str(e)[:120]
+        if satirlar:
+            yeni = pd.DataFrame(satirlar, columns=["ms", "funding"])
+            yeni["time"] = pd.to_datetime(yeni["ms"], unit="ms", utc=True).dt.floor("5min")   # funding saati mum açılışına hizalanır
+            eski = pd.concat([eski, yeni[["time", "funding"]]]).drop_duplicates("time").sort_values("time")
+            eski.to_csv(dosya, index=False)
+    return eski.reset_index(drop=True)
+
+
+def funding_ekle(df: pd.DataFrame, sembol: str, guncelle: bool = True) -> pd.DataFrame:
+    """Mum tablosuna 'funding' sütunu ekler: funding ödeme anına denk gelen mumda oran (ondalık), diğerlerinde 0."""
+    if config.ISLEM_TURU != "vadeli" or df.empty:
+        return df
+    f = funding_gecmisi(sembol, guncelle=guncelle)
+    if f.empty:
+        return df
+    sure = df["time"].diff().median() if len(df) > 1 else pd.Timedelta("15min")
+    hizali = f.copy()
+    hizali["time"] = hizali["time"].dt.floor(sure)
+    seri = hizali.groupby("time")["funding"].sum()
+    df = df.copy()
+    df["funding"] = df["time"].map(seri).fillna(0.0)
+    return df
+
+
 def mumlari_getir(sembol: str, aralik: str = "15m", gun: int = config.GECMIS_GUN,
                   guncelle: bool = True) -> pd.DataFrame:
     """Önbellekten okur, eksik kısmı indirir. 10m için 5m indirip birleştirir."""
@@ -78,7 +133,7 @@ def mumlari_getir(sembol: str, aralik: str = "15m", gun: int = config.GECMIS_GUN
     sinir = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=gun)
     df = _kapanmamis_mumu_at(df[df["time"] >= sinir].reset_index(drop=True), aralik)
     df.to_csv(dosya, index=False)
-    return df
+    return funding_ekle(df, sembol, guncelle)
 
 
 def _kapanmamis_mumu_at(df: pd.DataFrame, aralik: str) -> pd.DataFrame:
@@ -98,6 +153,7 @@ def _yeniden_ornekle(df: pd.DataFrame, kural: str) -> pd.DataFrame:
         "close": g["close"].last(), "volume": g["volume"].sum(),
         "quote_volume": g["quote_volume"].sum(), "trades": g["trades"].sum(),
         "taker_buy_base": g["taker_buy_base"].sum(),
+        **({"funding": g["funding"].sum()} if "funding" in df.columns else {}),
     }).dropna().reset_index()
     # 5m'lik parçaların hepsi gelmediyse son 10m mumu yarımdır
     sayim = g["close"].count().reset_index(drop=True)

@@ -23,8 +23,30 @@ def mum_saati(o: pd.DataFrame) -> float:
 
 
 def funding_maliyeti(saat) -> np.ndarray | float:
-    """Pozisyonun açık kaldığı saate göre funding maliyeti (%); 8 saatte bir ödenir, vadeli dışında sıfır."""
+    """Sabit tahmin: pozisyonun açık kaldığı saate göre funding maliyeti (%); 8 saatte bir ödenir, vadeli dışında sıfır."""
     return np.floor(np.asarray(saat, dtype=float) / 8) * config.FUNDING_8S_YUZDE
+
+
+def funding_kumulatif(o: pd.DataFrame) -> np.ndarray | None:
+    """Gerçek funding verisi varsa (Binance), mum başına kümülatif funding (% cinsinden). Yoksa None."""
+    if config.ISLEM_TURU != "vadeli" or "funding" not in o.columns or not np.isfinite(o["funding"].to_numpy(dtype=float)).any():
+        return None
+    f = o["funding"].fillna(0.0).to_numpy(dtype=float) * 100
+    if not np.any(f):
+        return None
+    return np.cumsum(f)
+
+
+def funding_maliyeti_mum(o: pd.DataFrame, giris_idx, cikis_idx, yukselis) -> np.ndarray | float:
+    """Giriş-çıkış mumları arasında ödenen funding (%). Gerçek veri varsa onunla: long pozitif oranı öder, short alır
+    (negatif oranda tersi). Veri yoksa sabit tahmine düşer."""
+    kum = funding_kumulatif(o)
+    gi, ci = np.asarray(giris_idx), np.asarray(cikis_idx)
+    if kum is None:
+        return funding_maliyeti((ci - gi) * mum_saati(o))
+    odenen = kum[ci] - kum[gi]           # giriş mumundan sonra, çıkış mumuna kadar (çıkış dahil) biriken oran
+    yon = np.where(np.asarray(yukselis, dtype=bool), 1.0, -1.0)
+    return odenen * yon
 
 
 def _gun(o: pd.DataFrame) -> pd.Series:
@@ -62,7 +84,7 @@ def olusumlar(r: dict, o: pd.DataFrame, KT: pd.DataFrame, hedef: pd.DataFrame) -
     cik = cikis_idx[idx]
     brut = (c[cik] / c[idx] - 1) * 100 * (1 if yukselis else -1)   # işlem yönüne göre % getiri
     sira = np.searchsorted(V, idx)
-    funding = funding_maliyeti((cik - idx) * mum_saati(o))
+    funding = funding_maliyeti_mum(o, idx, cik, yukselis)
     return {
         "idx": idx, "cikis_idx": cik, "bolum": np.where(sira < s1, 0, np.where(sira < s2, 1, 2)),
         "isabet": (y.to_numpy()[idx] == yon).astype(int), "brut": brut, "net": brut - islem_maliyeti() - funding,

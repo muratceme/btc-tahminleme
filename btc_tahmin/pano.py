@@ -948,6 +948,7 @@ sorusunu sorar. Cevabı, hiç görmediği bir dönemde de tutan kuralları ve mo
 <p><b>Sinyal yoksa “eğilim”:</b> %{int(config.MIN_TUTARLILIK * 100)}+ tutarlı hiçbir kaynak aktif değilse sistem BEKLE der; ama yanında modellerin o anki <b>eğilimini</b> de yazar (ör. “eğilim LONG %57 · model doğruluğu %54 · düşük güven”). Model doğruluğu, o modelin test dönemindeki genel isabetidir; %50 yazı-tura demektir. Eğilim işlem sinyali değildir, sadece “modeller hangi tarafa bakıyor” bilgisidir. Daha sık ama daha zayıf sinyal istersen ayarlar/kullanici.json içinde <span class="mono">"min_tutarlilik": 0.6</span> yazabilirsin; kurallar o eşikle yeniden aranır ve zayıf kaynaklar Wilson ağırlığıyla az söz hakkı alır.</p>
 <p><b>Fable sinyalleri sayfası:</b> madencilikten bağımsız, kuralları baştan yazılmış dört klasik strateji (trend takibi, ortalamaya dönüş, sıkışma kırılımı, momentum teyitli). Kurallar veriden seçilmediği için seçim yanlılığı yoktur; tüm geçmişteki işlem sonucu, kâr faktörü, max düşüş ve kayıp serisi olduğu gibi gösterilir. Her stratejinin çıkış kuralı bellidir (Supertrend dönünce, orta banda dönünce, N mum sonra…). Son 24 saat şeridi, grafik ve tablo Sinyaller sayfasıyla aynı mantıktadır.</p>
 <p><b>Strateji tarama sayfası:</b> el yazımı stratejiler zarar yazarsa tersinden gidilir: beş ailenin yüzlerce varyantı (EMA çiftleri, RSI eşikleri, hacim filtresi, çıkış süresi, sadece long/short) denenir, veri %60/%20/%20 bölünür ve yalnızca üç dönemde de komisyon sonrası artı yazanlar gösterilir. Denenen aday sayısı açıkça yazılır; geçen sayı denenenin %5'inden azsa şans payı yüksektir. Asıl ölçüm canlı takiptir.</p>
+<p><b>Yürüyen pencere testi ve rejim kuralı:</b> tarama ve uzun vade sayfalarında, tek %60/20/20 bölmesine ek olarak seçim her 30 günde bir yalnızca o güne kadarki veriyle yeniden yapılır ve sonraki ay ölçülür (“o zaman seçseydim ne olurdu”). Toplam eksiyse geçen stratejilere güvenme. Rejim kuralı: bir strateji test döneminde yalnızca trendli (ADX > 25) ya da yalnızca yatay piyasada artı yazdıysa rozetle işaretlenir ve Şimdi gir sayfasında diğer rejimdeki sinyali “bastırılan” bölümüne düşer. Stop / kâr al varyantları: her ailenin en uzun çıkışlı varyantlarına ATR tabanlı stop (1,5× ya da 1×) ve kâr al (3× ya da 2×) kardeşleri eklenir; aday sayısı ~600'e çıkar, şans payı uyarısı buna göre okunmalı.</p>
 <p><b>Uzun vade sayfası:</b> aynı strateji taraması 1 saatlik ve 4 saatlik mumlarda çalıştırılır. Her zaman dilimi için “tipik mum hareketi ÷ komisyon” oranı verilir (1'in altı: komisyon hareketi yiyor; 2 ve üstü: nefes alanı var), al-tut ile karşılaştırılır ve geçen stratejiler trendli (ADX > 25) ve yatay piyasada ayrı ölçülür.</p>
 <p><b>Şimdi gir sayfası:</b> tüm sayfalardaki kaynakların son mumdaki sinyallerini tek listede toplar: coin, yön, çıkış mumu ve saati, grafik türü (mum süresi), geçmiş performans ve o kaynağın sayfasına bağlantı. Strateji sayfalarındaki açık pozisyonlar ve düşük güvenli eğilimler ayrı bölümlerde. Sinyal olmaması normaldir; sayfa her güncellemede yenilenir.</p>
 <p><b>Son 1 saat sayfası:</b> Şimdi gir ile aynı mantık, ama son 1 saat içinde sinyale dönmüş her kaynak: giriş saati, çıkış saati, şu anki durum (AÇIK ya da KAPANDI ve net sonuç). Aktif kural satırları canlı sinyal günlüğünden, diğerleri 24 saatlik çizelgeden gelir.</p>
@@ -1284,6 +1285,35 @@ def _rejim_kutulari(r: dict | None) -> str:
             + kutu("Test · YATAY piyasada", r["yatay"], "ADX ≤ 25 iken girilen işlemler") + "</div>")
 
 
+def _yuruyen_karti(t: dict | None) -> str:
+    """Yürüyen pencere testi: her ay o güne kadarki veriyle seçim, sonraki ay sonuç."""
+    y = (t or {}).get("yuruyen")
+    if not y or not y.get("pencereler"):
+        return ""
+    satir = "".join(
+        f'<tr><td>{_e(p["bas"][:10])} → {_e(p["bitis"][:10])}</td><td class="sayi">{p["secilen"]}</td>'
+        f'<td>{_e(p["top1_ad"] or "—")}</td><td class="sayi mono">{_yuzde(p["top1_net"]) if p["top1_ad"] else "—"} <span class="cok-kucuk">{p["top1_islem"]} işlem</span></td>'
+        f'<td class="sayi mono">{_yuzde(p["ortalama_net"]) if p["secilen"] else "—"}</td><td class="sayi mono">{_yuzde(p["al_tut"])}</td></tr>' for p in y["pencereler"])
+    def kutu(ad, v, aciklama):
+        return f'<div class="kpi"><div class="e">{ad}</div><div class="d {"iyi" if v > 0 else ("kotu" if v < 0 else "")}">{v:+.1f}%</div><div class="a">{aciklama}</div></div>'
+    return (f'<div class="kart bolum"><div class="kart-baslik"><span>Yürüyen pencere testi · her {y["pencere_gun"]} günde bir yeniden seçim · {y["pencere_sayisi"]} pencere</span></div>'
+            f'<div class="kpi-izgara kpi-4">{kutu("En iyi varyant (her ay 1 tane)", y["top1_toplam"], f"{y['arti_pencere']}/{y['pencere_sayisi']} pencerede artı")}'
+            f'{kutu("Geçen varyantların ortalaması", y["ortalama_toplam"], "her ay o güne kadar geçenlerin eşit ağırlıklı ortalaması")}'
+            f'{kutu("Al-tut (aynı dönem)", y["al_tut_toplam"], "hiçbir şey yapmasaydın")}'
+            f'<div class="kpi"><div class="e">Nasıl okunur</div><div class="d" style="font-size:13px">tek bölmeden dürüst</div><div class="a">seçim her ay sadece geçmişle yapılır; buradaki rakam “o zaman seçseydim ne olurdu”dur</div></div></div>'
+            f'<div class="tablo-sar" style="margin-top:10px"><table><thead><tr><th>Pencere</th><th class="sayi">Geçen</th><th>O ayın en iyisi (doğrulama KF)</th><th class="sayi">Sonraki ay</th><th class="sayi">Geçenlerin ort.</th><th class="sayi">Al-tut</th></tr></thead><tbody>{satir}</tbody></table></div>'
+            '<p class="cok-kucuk">Üstteki %60/20/20 bölmesi tek bir seçimdir ve iyimser olabilir. Bu test, seçimi her ay yalnızca o güne kadarki veriyle yeniden yapar ve sonraki ayı ölçer. '
+            'Buradaki toplam eksiyse, tarama sayfasındaki “geçen” stratejilere güvenme; artıysa ve al-tut\'u geçiyorsa seçim yöntemi gerçekten bir şey yakalıyor demektir.</p></div>')
+
+
+def _rejim_rozeti(f: dict) -> str:
+    k = f.get("rejim_kurali")
+    if not k:
+        return ""
+    return (f'<span class="rozet orta" title="Test döneminde yalnızca bu rejimde artı yazdı; diğer rejimde sinyal bastırılır">'
+            f'REJİM KURALI: yalnızca {"TRENDLİ" if k == "trend" else "YATAY"} piyasada</span>')
+
+
 def _fable_strateji(sembol: str, aralik: str, sid: str, f: dict, maliyet: float, canli: dict | None = None) -> str:
     cz = f["cizelge"]
     sin = [r for r in cz if r["sinyal"] != "BEKLE"]
@@ -1319,7 +1349,7 @@ def _fable_strateji(sembol: str, aralik: str, sid: str, f: dict, maliyet: float,
     st = f["istatistik"]
     net24 = sum(c["net"] for c in kap)
     return f"""<div class="strat" data-strat="{sid}" hidden>
-<div class="kart bolum"><div class="kart-baslik"><span style="color:{f['renk']}">◆ {_e(f['ad'])} · {_e(f['ozet'])}</span></div>
+<div class="kart bolum"><div class="kart-baslik"><span style="color:{f['renk']}">◆ {_e(f['ad'])} · {_e(f['ozet'])}</span>{_rejim_rozeti(f)}</div>
 <ul class="liste kucuk">{"".join(f"<li><span>{_e(k)}</span></li>" for k in f["kurallar"])}</ul>
 <p class="cok-kucuk">{("Bu varyant <b>tarama ile seçildi</b>: eğitim dönemi sonucu iyimserdir (orada seçildi), asıl not hiç görülmemiş TEST dönemidir; tüm geçmiş kutusu üç dönemin toplamıdır." if f.get("donemler") else
 f"Bu kurallar baştan yazıldı, veriden seçilmedi; aşağıdaki sonuçlar <b>tüm geçmişin</b> ({f['veri_gun']} gün) olduğu gibi dökümüdür, seçim yanlılığı yoktur.")}
@@ -1405,6 +1435,7 @@ def tarama_html(rapor: dict, yenile_sn: int | None = None) -> str:
                 f'<div class="kpi"><div class="e">Testte de artı</div><div class="d {"iyi" if g.get("test") else ""}">{g.get("test", 0)}</div><div class="a">hiç görülmemiş son %20 dönemde de kârlı (gösterilenler)</div></div></div>'
                 f'<p class="cok-kucuk">Ölçütler: {_e(t.get("olcutler", ""))}. <b>Dürüst uyarı:</b> {t.get("denenen", 0)} aday denendiğinde bir kısmı şans eseri üç dönemde de artı yazabilir; '
                 f'geçen sayı denenenin %5\'inden azsa şans payı yüksektir. Gerçek ölçüm, bu stratejileri bir süre canlı izlemektir (son 24 saat şeridi ve son 30 gün kutusu).</p></div>')
+        ozet += _yuruyen_karti(t)
         if not sayfa:
             bolumler.append(f'<section class="coin sz-coin fb-coin" id="{_e(s_)}" data-sembol="{_e(s_)}">{ozet}'
                             '<div class="kart"><p class="kucuk">Üç dönemde de artı yazan varyant yok. Bu dürüst bir sonuç: bu zaman diliminde bu aileler komisyonu yenemiyor. '
@@ -1480,6 +1511,7 @@ def umut_html(rapor: dict, yenile_sn: int | None = None) -> str:
             ozet = (f'<p class="kucuk">{d["tarama"]["denenen"]} varyant denendi: eğitimde {g["egitim"]}, doğrulamada {g["dogrulama"]}, testte <b>{g["test"]}</b> artı yazdı. '
                     f'Şu anki rejim: <b>{"TRENDLİ" if d["rejim_simdi"] == "trend" else "YATAY"}</b> (ADX {"&gt;" if d["rejim_simdi"] == "trend" else "≤"} 25) · test döneminin %{d["test_trend_payi"] * 100:.0f}\'i trendliydi. '
                     f'Son {config.CIZELGE_MUM} mum = {config.CIZELGE_MUM * int(tf[:-1])} saat.</p>')
+            ozet += _yuruyen_karti(d["tarama"])
             if not d["sayfa"]:
                 icerik = ozet + '<div class="kart"><p class="kucuk">Bu zaman diliminde üç dönemde de artı yazan varyant yok.</p></div>'
             else:
@@ -1525,7 +1557,7 @@ def _simdi_satir(r: dict, acik: bool = False) -> str:
 def simdi_html(rapor: dict, yenile_sn: int | None = None) -> str:
     from .anlik import topla
     a = topla(rapor)
-    sin, acik, eg = a["sinyaller"], a["acik_pozisyonlar"], a["egilimler"]
+    sin, acik, eg, bas_ = a["sinyaller"], a["acik_pozisyonlar"], a["egilimler"], a.get("bastirilan", [])
     son = " · ".join(f'{s.replace("USDT", "")} son mum {_tsi(v["zaman"])} TSİ ({_e(v["aralik"])})' for s, v in a["coin_son_mum"].items())
     bas = "".join(f'<th>{h}</th>' for h in ("Coin", "Sinyal", "Çıkış ne zaman?", "Kaynak · hangi sayfa", "Geçmiş performans", ""))
     if sin:
@@ -1541,6 +1573,11 @@ def simdi_html(rapor: dict, yenile_sn: int | None = None) -> str:
         acik_html = (f'<div class="kart bolum"><div class="kart-baslik"><span>Açık pozisyonlar · sinyal önceki mumlarda geldi, çıkış henüz gelmedi · {len(acik)}</span></div>'
                      f'<div class="tablo-sar"><table><thead><tr>{bas}</tr></thead><tbody>{"".join(_simdi_satir(r, True) for r in acik)}</tbody></table></div>'
                      '<p class="cok-kucuk">Strateji sayfalarındaki (Fable, tarama, uzun vade) pozisyonlar. “Şu an” değeri giriş fiyatına göre komisyon dahil anlık durum.</p></div>')
+    bas_html = ""
+    if bas_:
+        bas_html = (f'<div class="kart bolum"><div class="kart-baslik"><span>Rejim uygun olmadığı için bastırılan sinyaller · {len(bas_)}</span></div>'
+                    f'<div class="tablo-sar"><table><thead><tr>{bas}</tr></thead><tbody>{"".join(_simdi_satir(r) for r in bas_)}</tbody></table></div>'
+                    '<p class="cok-kucuk">Bu stratejiler test döneminde yalnızca bir rejimde (trendli ya da yatay) artı yazdı; şu anki rejim o değil. Sinyal var ama geçmişi “bu koşulda zarar” diyor.</p></div>')
     eg_html = ""
     if eg:
         eg_html = ('<div class="kart bolum"><div class="kart-baslik"><span>Eğilimler · sinyal değil, düşük güven</span></div><ul class="liste kucuk">'
@@ -1550,7 +1587,7 @@ def simdi_html(rapor: dict, yenile_sn: int | None = None) -> str:
 <div class="kart bolum"><p class="kucuk" style="margin:0"><b>Şimdi gir:</b> tüm sayfalardaki kaynakların <b>son mumdaki</b> sinyalleri tek yerde: yön oylaması, aktif kurallar, Fable stratejileri,
 strateji tarama ve uzun vade (1 saat / 4 saat). Her satırda çıkış mumu ve saati, grafik türü ve geçmiş performans var; “Geçmişini gör” o kaynağın sayfasını doğru coin ve stratejide açar.
 Sayfa adı şaka değil ama tavsiye de değil: burada “sinyal var” demek, “git gir” demek değildir.<br><span class="cok-kucuk">{son}</span></p></div>
-{durum}{acik_html}{eg_html}
+{durum}{acik_html}{bas_html}{eg_html}
 </main>
 <footer>{_e(rapor['uyari'])}</footer>"""
     return _iskelet("Şimdi gir · Kripto Risk Terminali", "simdi.html", govde, "", rapor["olusturma"], yenile_sn)

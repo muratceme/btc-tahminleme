@@ -93,6 +93,18 @@ def kontrol(rapor: dict) -> list[dict]:
             s.append(_satir("Vadeli piyasa", f"{sembol} vadeli verileri", "ok",
                             f"funding %{v['funding_yuzde']}, OI {v['oi_degisim_24s_yuzde']:+}%"))
 
+    # --- Funding geçmişi (gerçek maliyet hesabı)
+    if config.ISLEM_TURU == "vadeli":
+        from .data import FUNDING_HATA
+        for sembol, c in (rapor.get("coinler") or {}).items():
+            fd = c.get("funding_durumu") or {}
+            if fd.get("gercek"):
+                s.append(_satir("Vadeli piyasa", f"{sembol} funding geçmişi", "ok",
+                                f"{fd['kayit']} ödeme kaydı · ortalama 8 saatlik %{fd['ortalama_yuzde']:.4f} · net hesaplarda gerçek oran kullanılıyor"))
+            else:
+                s.append(_satir("Vadeli piyasa", f"{sembol} funding geçmişi", "normal",
+                                "Gerçek funding verisi yok (" + _sebep(FUNDING_HATA.get(sembol, "")) + "). Sabit %0,01 / 8 saat varsayımı kullanılıyor."))
+
     # --- Haberler
     hb = b.get("haberler")
     if not hb:

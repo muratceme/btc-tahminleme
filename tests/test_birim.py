@@ -268,3 +268,33 @@ def test_strateji_gunluge_kaydedilir_ve_karnede_gorunur():
     k = gunluk.karne(df3)
     assert "strateji:umut:trend_9_21:1h" in k["stratejiler"] and k["stratejiler"]["strateji:umut:trend_9_21:1h"]["sinyal"] == 1
     assert "Stratejiler (Fable / tarama / uzun vade)" in k["turler"]
+
+
+def test_rejim_kapisi_bastirir():
+    from btc_tahmin import anlik
+    cz = [{"zaman": "2026-01-10T12:00:00+00:00", "fiyat": 100.0, "sinyal": "LONG", "cikis_mum": 8, "maks_mum": 8, "pozisyonda": False,
+           "cikis": {"durum": "acik", "net": 0.1}}]
+    f = {"ad": "x", "istatistik": {"tum": {"islem": 5, "toplam_net": 1.0, "kar_faktoru": 1.5}}, "cizelge": cz, "kurallar": [], "rejim_kurali": "trend"}
+    rapor = {"olusturma": "2026-01-10T12:15:00+00:00", "coinler": {"BTCUSDT": {
+        "aralik": "15m", "son_mum_zamani": "2026-01-10T12:00:00+00:00", "fiyat": 100.0, "yon": {}, "aktif_tum": [],
+        "tarama": {"sayfa": {"s1": f}, "rejim_simdi": "yatay"}}}}
+    a = anlik.topla(rapor)
+    assert a["sinyaller"] == [] and len(a["bastirilan"]) == 1
+    rapor["coinler"]["BTCUSDT"]["tarama"]["rejim_simdi"] = "trend"
+    assert len(anlik.topla(rapor)["sinyaller"]) == 1
+
+
+def test_yuruyen_pencere_ve_stop():
+    from btc_tahmin import fable
+    from btc_tahmin.features import veri_seti_hazirla
+    from tests.sentetik_test import sahte_mumlar
+    o, _, _ = veri_seti_hazirla({"BTCUSDT": sahte_mumlar(n=12000, tohum=11)}, ana="BTCUSDT")
+    t = fable.tarama(o)
+    y = t["yuruyen"]
+    assert y["pencere_sayisi"] >= 2 and len(y["pencereler"]) == y["pencere_sayisi"]
+    assert abs(sum(p["top1_net"] for p in y["pencereler"]) - y["top1_toplam"]) < 1e-6
+    stop = next(a for a in fable._adaylar() if "_s1.5_t3" in a["id"])
+    for x in fable.islemler(o, stop):
+        assert x["j"] - x["i"] <= x["maks_mum"]
+    assert fable.rejim_kurali({"trend": {"islem": 6, "toplam_net": 2.0}, "yatay": {"islem": 7, "toplam_net": -1.0}}) == "trend"
+    assert fable.rejim_kurali({"trend": {"islem": 2, "toplam_net": 2.0}, "yatay": {"islem": 7, "toplam_net": -1.0}}) is None

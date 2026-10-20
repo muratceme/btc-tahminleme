@@ -34,8 +34,9 @@ def _cikis(zaman_iso: str, aralik: str, mum: int | None, en_gec: int | None = No
             "saat": _tsi(zaman_iso, (mum + 1) * dk)}
 
 
-def _strateji_satirlari(sembol: str, aralik: str, stratejiler: dict, kaynak: str, sayfa: str, ek_param: str = "") -> tuple[list, list]:
-    sinyal, acik = [], []
+def _strateji_satirlari(sembol: str, aralik: str, stratejiler: dict, kaynak: str, sayfa: str, ek_param: str = "",
+                        rejim_simdi: str | None = None) -> tuple[list, list, list]:
+    sinyal, acik, bastirilan = [], [], []
     for sid, f in (stratejiler or {}).items():
         cz = f.get("cizelge") or []
         if not cz:
@@ -49,19 +50,25 @@ def _strateji_satirlari(sembol: str, aralik: str, stratejiler: dict, kaynak: str
         ortak = {"sembol": sembol, "aralik": aralik, "grafik": ARALIK_ADI.get(aralik, aralik), "kaynak": kaynak, "ad": f["ad"],
                  "performans": perf, "link": link, "kurallar": f.get("kurallar", [])[:3]}
         if son["sinyal"] != "BEKLE":
-            sinyal.append({**ortak, "yon": son["sinyal"], "zaman": son["zaman"], "fiyat": son["fiyat"],
-                           "cikis": _cikis(son["zaman"], aralik, son.get("cikis_mum"), son.get("maks_mum"))})
+            satir = {**ortak, "yon": son["sinyal"], "zaman": son["zaman"], "fiyat": son["fiyat"],
+                     "cikis": _cikis(son["zaman"], aralik, son.get("cikis_mum"), son.get("maks_mum"))}
+            kural = f.get("rejim_kurali")
+            if kural and rejim_simdi and kural != rejim_simdi:
+                satir["performans"] += f" · yalnızca {'trendli' if kural == 'trend' else 'yatay'} piyasada artı; şu an {'trendli' if rejim_simdi == 'trend' else 'yatay'}"
+                bastirilan.append(satir)
+            else:
+                sinyal.append(satir)
         elif son.get("pozisyonda"):
             giris = next((r for r in reversed(cz) if r["sinyal"] != "BEKLE"), None)
             if giris and giris.get("cikis") and giris["cikis"]["durum"] == "acik":
                 acik.append({**ortak, "yon": giris["sinyal"], "zaman": giris["zaman"], "fiyat": giris["fiyat"],
                              "simdi_net": giris["cikis"]["net"],
                              "cikis": _cikis(giris["zaman"], aralik, None, giris.get("maks_mum"))})
-    return sinyal, acik
+    return sinyal, acik, bastirilan
 
 
 def topla(rapor: dict) -> dict:
-    sinyaller, aciklar, egilimler = [], [], []
+    sinyaller, aciklar, egilimler, bastirilan = [], [], [], []
     for sembol, c in rapor["coinler"].items():
         aralik = c["aralik"]
         zaman = c["son_mum_zamani"]
@@ -97,10 +104,13 @@ def topla(rapor: dict) -> dict:
                               "link": f"grafik.html?s={sembol}&k={r['id']}",
                               "kurallar": [kosul_bilgisi(k)["etiket"] for k in r["kosullar"]][:5]})
         # 3) Fable stratejileri, 4) tarama (15m), 5) uzun vade
-        s_, a_ = _strateji_satirlari(sembol, aralik, c.get("fable"), "Fable sinyalleri", "fable.html"); sinyaller += s_; aciklar += a_
-        s_, a_ = _strateji_satirlari(sembol, aralik, (c.get("tarama") or {}).get("sayfa"), "Strateji tarama", "tarama.html"); sinyaller += s_; aciklar += a_
+        rj15 = (c.get("tarama") or {}).get("rejim_simdi")
+        s_, a_, b_ = _strateji_satirlari(sembol, aralik, c.get("fable"), "Fable sinyalleri", "fable.html"); sinyaller += s_; aciklar += a_
+        s_, a_, b_ = _strateji_satirlari(sembol, aralik, (c.get("tarama") or {}).get("sayfa"), "Strateji tarama", "tarama.html", "", rj15)
+        sinyaller += s_; aciklar += a_; bastirilan += b_
         for tf, d in ((c.get("umut") or {}).get("dilimler") or {}).items():
-            s_, a_ = _strateji_satirlari(sembol, tf, d.get("sayfa"), f"Uzun vade · {d['ad']}", "umut.html", f"&tf={tf}"); sinyaller += s_; aciklar += a_
+            s_, a_, b_ = _strateji_satirlari(sembol, tf, d.get("sayfa"), f"Uzun vade · {d['ad']}", "umut.html", f"&tf={tf}", d.get("rejim_simdi"))
+            sinyaller += s_; aciklar += a_; bastirilan += b_
         # 6) pozisyon hesaplayıcı (gün sonu)
         pz = c.get("pozisyon") or {}
         if pz.get("durum") == "var":
@@ -111,7 +121,7 @@ def topla(rapor: dict) -> dict:
                               "link": f"rapor.html#{sembol}", "kurallar": [pz.get("stop_dayanagi", "")]})
     sira = {"Uzun vade · 4 saat": 0, "Uzun vade · 1 saat": 1, "Strateji tarama": 2, "Fable sinyalleri": 3, "Sinyaller": 4, "Pano · pozisyon hesaplayıcı": 5, "Pano · aktif kural": 6}
     sinyaller.sort(key=lambda r: (r["sembol"], sira.get(r["kaynak"], 9)))
-    return {"zaman": rapor["olusturma"], "sinyaller": sinyaller, "acik_pozisyonlar": aciklar, "egilimler": egilimler,
+    return {"zaman": rapor["olusturma"], "sinyaller": sinyaller, "acik_pozisyonlar": aciklar, "egilimler": egilimler, "bastirilan": bastirilan,
             "coin_son_mum": {s: {"zaman": c["son_mum_zamani"], "aralik": c["aralik"], "fiyat": c["fiyat"]} for s, c in rapor["coinler"].items()}}
 
 

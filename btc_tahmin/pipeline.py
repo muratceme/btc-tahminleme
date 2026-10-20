@@ -316,7 +316,7 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
         "yon": sinyal.hesapla(o, KT, kurallar, yon, aralik),
         "cizelge": sinyal.zaman_cizelgesi(o, KT, kurallar, yon, aralik),
         "fable": fable.hesapla(o),
-        "tarama": (lambda t: {**t, "sayfa": fable.tarama_sayfa_verisi(o, t, fable.rejim_serisi(o))})(fable.tarama(o)),
+        "tarama": (lambda t, rj: {**t, "sayfa": fable.tarama_sayfa_verisi(o, t, rj), "rejim_simdi": "trend" if rj[-1] else "yatay"})(fable.tarama(o), fable.rejim_serisi(o)),
         "mum_dosyasi": mum_dosyasi_yaz(sembol, aralik, o),
         "tahmin": tahmin.hesapla(o, anahtar, hizli),
         "aktif_tum": [{k: r[k] for k in ("id", "hedef", "yon", "tutarlilik", "kosullar")}
@@ -329,6 +329,10 @@ def coin_analizi(sembol: str, aralik: str, mumlar: dict, kirim: dict, hizli: boo
     from . import umut
     sonuc["umut"] = umut.calis(mumlar, sembol, o, sonuc["tarama"]) if aralik in ("5m", "10m", "15m", "30m") else None
     sonuc["strateji_sinyalleri"] = strateji_sinyalleri(sonuc)
+    kum = performans.funding_kumulatif(o)
+    sonuc["funding_durumu"] = ({"gercek": True, "kayit": int((o["funding"].fillna(0) != 0).sum()),
+                                "ortalama_yuzde": float(o.loc[o["funding"].fillna(0) != 0, "funding"].mean() * 100)}
+                               if kum is not None else {"gercek": False})
     return sonuc
 
 
