@@ -120,14 +120,14 @@ def main(argv=None):
         sunucu.HAZIR = False
         try:
             sunucu.baslat(args.port)
-        except OSError:
+        except OSError as e:
             print(f"""
-HATA: {args.port} portu başka bir program tarafından kullanılıyor.
-Büyük ihtimalle programın ESKİ bir kopyası hâlâ açık ve eski sayfayı göstermeye devam ediyor.
-Çözüm: Açık olan TÜM siyah pencereleri kapat (ya da Görev Yöneticisi'nde 'Python' işlemlerini sonlandır),
-sonra calistir.bat'ı tekrar çalıştır. Bundan sonraki sürümler eski kopyayı kendisi kapatır.
+HATA: {e}.
+Açık olan TÜM siyah pencereleri kapat (ya da Görev Yöneticisi'nde 'Python' işlemlerini sonlandır) ve calistir.bat'ı
+tekrar çalıştır; ya da başka bir port iste: calistir.bat --port 9000
 """, file=sys.stderr)
             return
+        args.port = sunucu.PORT          # istenen port doluysa bir sonraki boş port seçilmiş olabilir
         adres = f"http://localhost:{args.port}"
         ip = sunucu.yerel_ip()
         print("=" * 60)

@@ -129,24 +129,50 @@ def _eskiyi_kapat(port: int) -> bool:
         return False
 
 
-def baslat(port: int = 8000) -> ThreadingHTTPServer:
-    """Sunucuyu başlatır. Port doluysa ve doluluk eski bir kopyamızdan geliyorsa onu kapatıp yerine geçer."""
+PORT: int = 8000      # gerçekten kullanılan port (istenen doluysa bir sonraki boş port)
+
+
+def _dene(port: int):
+    return _Sunucu(("0.0.0.0", port), partial(_Isleyici, directory=str(config.CIKTI_DIR)))
+
+
+def baslat(port: int = 8000, deneme: int = 20) -> ThreadingHTTPServer:
+    """Sunucuyu başlatır. Port doluysa: önce eski kopyamızsa onu kapatıp yerine geçer; başka bir program
+    kullanıyorsa bir sonraki boş portu (8001, 8002, ...) seçer. Kullanılan port sunucu.PORT'ta ve kilit dosyasında."""
+    global PORT
     config.CIKTI_DIR.mkdir(parents=True, exist_ok=True)
+    # Eski kopyamız farklı bir portta açık kalmış olabilir (önceki açılışta port doluydu): her durumda kapat
     try:
-        sunucu = _Sunucu(("0.0.0.0", port), partial(_Isleyici, directory=str(config.CIKTI_DIR)))
+        eski = json.loads(_kilit_dosyasi().read_text(encoding="utf-8"))
+        if int(eski.get("port", -1)) != port and eski.get("pid") != os.getpid() and _eskiyi_kapat(int(eski["port"])):
+            print(f"{eski['port']} portunda açık kalan eski kopya kapatıldı.", flush=True)
+    except (OSError, ValueError, KeyError):
+        pass
+    sunucu = None
+    try:
+        sunucu = _dene(port)
     except OSError:
-        if not _eskiyi_kapat(port):
-            raise
-        print("Eski açık kopya kapatıldı, yerine geçiliyor ...", flush=True)
-        for _ in range(20):
-            time.sleep(0.5)
+        if _eskiyi_kapat(port):
+            print("Eski açık kopya kapatıldı, yerine geçiliyor ...", flush=True)
+            for _ in range(20):
+                time.sleep(0.5)
+                try:
+                    sunucu = _dene(port)
+                    break
+                except OSError:
+                    continue
+    if sunucu is None:
+        for aday in range(port + 1, port + 1 + deneme):
             try:
-                sunucu = _Sunucu(("0.0.0.0", port), partial(_Isleyici, directory=str(config.CIKTI_DIR)))
-                break
+                sunucu = _dene(aday)
             except OSError:
                 continue
+            print(f"UYARI: {port} portu başka bir program tarafından kullanılıyor; pano {aday} portunda açılıyor.", flush=True)
+            port = aday
+            break
         else:
-            raise
+            raise OSError(f"{port}-{port + deneme} arası hiçbir port boş değil")
+    PORT = port
     threading.Thread(target=sunucu.serve_forever, daemon=True).start()
     config.VERI_DIR.mkdir(parents=True, exist_ok=True)
     _kilit_dosyasi().write_text(json.dumps({"port": port, "anahtar": _KAPAT_ANAHTARI, "pid": os.getpid(),
